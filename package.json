@@ -7,7 +7,9 @@
     "node": ">=24.21.0 <25"
   },
   "scripts": {
-    "check": "prettier --check . && markdownlint-cli2 '**/*.md' '#node_modules'",
+    "check": "prettier --check . && markdownlint-cli2 '**/*.md' '#node_modules' && npm run check:tickets && npm run test:tooling",
+    "check:tickets": "node scripts/tickets.mjs check",
+    "test:tooling": "node --test scripts/tickets.test.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {

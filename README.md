@@ -30,6 +30,8 @@ make shell   # 開発ツールのコンテナに入る
 
 ## 開発と運用
 
+- [番号付きチケット一覧](docs/tickets/README.md)
+- [「チケット1を対応して」から Draft PR まで](docs/development-workflow.md)
 - [開発手順・PR の方針](CONTRIBUTING.md)
 - [GitHub 設定・ブランチルール](docs/repository-setup.md)
 - [参考にしたアプリ](https://github.com/greentiger0789/ollama-discord-chat-app-docker)

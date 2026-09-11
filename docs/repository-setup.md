@@ -15,7 +15,7 @@
 ```bash
 # 初回コミットと基盤ファイルのコミット後
 gh repo create greentiger0789/engine-sound-simulator --public --source=. --remote=origin --push
-gh repo edit greentiger0789/engine-sound-simulator --default-branch main --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false --delete-branch-on-merge
+gh repo edit greentiger0789/engine-sound-simulator --default-branch main --enable-merge-commit --enable-squash-merge=false --enable-rebase-merge=false --delete-branch-on-merge
 
 # CI 成功を確認してからルールを適用
 gh run list --repo greentiger0789/engine-sound-simulator --branch main
@@ -29,7 +29,8 @@ gh api repos/greentiger0789/engine-sound-simulator/rulesets
 
 ## 運用上の選択
 
-- PR 必須、CI 成功必須、最新の main 必須、会話の解決必須、squash のみ。
+- PR 必須、CI 成功必須、最新の main 必須、会話の解決必須、merge commit のみ。
+- リポジトリの `Allow merge commits` を有効にし、ruleset の許可方式を `merge` にします。merge commit と両立しない `Require linear history` は設定しません。
 - 他者承認数 0、管理者を含め bypass なし。単独開発でも CI を通して取り込めます。
 - workflow 権限は `contents: read`。`pull_request_target` は使用しません。
 - 公開リポジトリを作成しますが、Web アプリのデプロイは M1 以降で別途構成します。

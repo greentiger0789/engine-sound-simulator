@@ -2,5 +2,8 @@ node_modules/
 dist/
 coverage/
 package-lock.json
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/implement-ticket/
 .codex/
