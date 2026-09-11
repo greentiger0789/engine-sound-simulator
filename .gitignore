@@ -4,8 +4,17 @@
 !.env.example
 *.pem
 *.key
-.agents/
-.codex/
+# Only reviewed project instructions are shared; keep local state private.
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/implement-ticket/
+/.codex/*
+!/.codex/config.toml
+!/.codex/agents/
+/.codex/agents/*
+!/.codex/agents/ticket-worker.toml
+!/.codex/agents/ticket-reviewer.toml
 
 # Dependencies and build artifacts
 node_modules/

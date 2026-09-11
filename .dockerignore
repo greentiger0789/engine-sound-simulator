@@ -1,6 +1,14 @@
 .git
-.agents
-.codex
+.agents/*
+!.agents/skills
+.agents/skills/*
+!.agents/skills/implement-ticket
+.codex/*
+!.codex/config.toml
+!.codex/agents
+.codex/agents/*
+!.codex/agents/ticket-worker.toml
+!.codex/agents/ticket-reviewer.toml
 node_modules
 dist
 coverage

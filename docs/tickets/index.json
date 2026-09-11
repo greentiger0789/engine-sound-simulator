@@ -1,0 +1,194 @@
+[
+  {
+    "id": 1,
+    "slug": "web-foundation",
+    "title": "React/Vite/TypeScript と Docker Web 基盤",
+    "milestone": "M1",
+    "depends_on": [],
+    "file": "docs/tickets/001-web-foundation.md"
+  },
+  {
+    "id": 2,
+    "slug": "worklet-build-contract",
+    "title": "AudioWorklet の独立ビルドと境界契約",
+    "milestone": "M1",
+    "depends_on": [1],
+    "file": "docs/tickets/002-worklet-build-contract.md"
+  },
+  {
+    "id": 3,
+    "slug": "audio-start-stop-slice",
+    "title": "ユーザー操作による開始・停止の縦切り",
+    "milestone": "M1",
+    "depends_on": [1, 2],
+    "file": "docs/tickets/003-audio-start-stop-slice.md"
+  },
+  {
+    "id": 4,
+    "slug": "test-and-ci-baseline",
+    "title": "音声ライフサイクルの回帰テストと CI 基準",
+    "milestone": "M1",
+    "depends_on": [1, 2, 3],
+    "file": "docs/tickets/004-test-and-ci-baseline.md"
+  },
+  {
+    "id": 5,
+    "slug": "engine-config-and-single-preset",
+    "title": "EngineConfig 検証と単気筒プリセット",
+    "milestone": "M2",
+    "depends_on": [1, 4],
+    "file": "docs/tickets/005-engine-config-and-single-preset.md"
+  },
+  {
+    "id": 6,
+    "slug": "rotational-dynamics",
+    "title": "回転体・吸気遅れ・idle の数値モデル",
+    "milestone": "M2",
+    "depends_on": [5],
+    "file": "docs/tickets/006-rotational-dynamics.md"
+  },
+  {
+    "id": 7,
+    "slug": "phase-and-firing-events",
+    "title": "クランク位相積分と単気筒燃焼イベント",
+    "milestone": "M2",
+    "depends_on": [5, 6],
+    "file": "docs/tickets/007-phase-and-firing-events.md"
+  },
+  {
+    "id": 8,
+    "slug": "single-cylinder-pulse-and-protection",
+    "title": "単気筒パルス DSP と出力保護",
+    "milestone": "M2",
+    "depends_on": [6, 7],
+    "file": "docs/tickets/008-single-cylinder-pulse-and-protection.md"
+  },
+  {
+    "id": 9,
+    "slug": "single-cylinder-worklet-integration",
+    "title": "単気筒を Worklet と UI に統合",
+    "milestone": "M2",
+    "depends_on": [3, 5, 6, 7, 8],
+    "file": "docs/tickets/009-single-cylinder-worklet-integration.md"
+  },
+  {
+    "id": 10,
+    "slug": "multicylinder-config-and-presets",
+    "title": "多気筒設定と基準プリセット",
+    "milestone": "M3",
+    "depends_on": [5, 7],
+    "file": "docs/tickets/010-multicylinder-config-and-presets.md"
+  },
+  {
+    "id": 11,
+    "slug": "config-editor-safe-apply",
+    "title": "位相編集 UI と停止中の安全な構成適用",
+    "milestone": "M3",
+    "depends_on": [3, 5, 9, 10],
+    "file": "docs/tickets/011-config-editor-safe-apply.md"
+  },
+  {
+    "id": 12,
+    "slug": "throttle-and-load-controls",
+    "title": "アクセル・負荷操作 UI",
+    "milestone": "M3",
+    "depends_on": [6, 9],
+    "file": "docs/tickets/012-throttle-and-load-controls.md"
+  },
+  {
+    "id": 13,
+    "slug": "waveform-and-spectrum",
+    "title": "燃焼列・波形・FFT 可視化",
+    "milestone": "M3",
+    "depends_on": [9, 10, 11],
+    "file": "docs/tickets/013-waveform-and-spectrum.md"
+  },
+  {
+    "id": 14,
+    "slug": "m3-regression-and-usable-demo",
+    "title": "M3 利用可能版の回帰・受け入れ",
+    "milestone": "M3",
+    "depends_on": [10, 11, 12, 13],
+    "file": "docs/tickets/014-m3-regression-and-usable-demo.md"
+  },
+  {
+    "id": 15,
+    "slug": "intake-exhaust-resonators",
+    "title": "吸排気共鳴フィルター",
+    "milestone": "M4",
+    "depends_on": [8, 14],
+    "file": "docs/tickets/015-intake-exhaust-resonators.md"
+  },
+  {
+    "id": 16,
+    "slug": "mechanical-noise-and-seeded-variation",
+    "title": "機械次数音と seed 付き燃焼ばらつき",
+    "milestone": "M4",
+    "depends_on": [8, 15],
+    "file": "docs/tickets/016-mechanical-noise-and-seeded-variation.md"
+  },
+  {
+    "id": 17,
+    "slug": "aliasing-and-bank-path-foundation",
+    "title": "aliasing 対策とバンク別経路の土台",
+    "milestone": "M4",
+    "depends_on": [10, 15, 16],
+    "file": "docs/tickets/017-aliasing-and-bank-path-foundation.md"
+  },
+  {
+    "id": 18,
+    "slug": "m4-sound-quality-review",
+    "title": "M4 音質・性能レビュー",
+    "milestone": "M4",
+    "depends_on": [15, 16, 17],
+    "file": "docs/tickets/018-m4-sound-quality-review.md"
+  },
+  {
+    "id": 19,
+    "slug": "accessibility-and-audio-lifecycle",
+    "title": "操作性・アクセシビリティ・音声 lifecycle",
+    "milestone": "M5",
+    "depends_on": [14, 18],
+    "file": "docs/tickets/019-accessibility-and-audio-lifecycle.md"
+  },
+  {
+    "id": 20,
+    "slug": "browser-and-long-run-validation",
+    "title": "実ブラウザ横断・長時間動作の検証",
+    "milestone": "M5",
+    "depends_on": [14, 17, 19],
+    "file": "docs/tickets/020-browser-and-long-run-validation.md"
+  },
+  {
+    "id": 21,
+    "slug": "production-delivery-and-hosting-decision",
+    "title": "本番配信構成とホスティング判断",
+    "milestone": "M5",
+    "depends_on": [1, 20],
+    "file": "docs/tickets/021-production-delivery-and-hosting-decision.md"
+  },
+  {
+    "id": 22,
+    "slug": "two-stroke-cycle-support",
+    "title": "2ストローク cycleDegrees 対応",
+    "milestone": "M6",
+    "depends_on": [10, 20],
+    "file": "docs/tickets/022-two-stroke-cycle-support.md"
+  },
+  {
+    "id": 23,
+    "slug": "v-and-automotive-presets",
+    "title": "V型・自動車向け6/8気筒設定",
+    "milestone": "M6",
+    "depends_on": [17, 20, 22],
+    "file": "docs/tickets/023-v-and-automotive-presets.md"
+  },
+  {
+    "id": 24,
+    "slug": "drivetrain-load-and-gear",
+    "title": "車両負荷・クラッチ・ギア拡張",
+    "milestone": "M6",
+    "depends_on": [6, 20, 23],
+    "file": "docs/tickets/024-drivetrain-load-and-gear.md"
+  }
+]
