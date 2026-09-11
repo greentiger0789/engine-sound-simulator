@@ -8,3 +8,27 @@ services:
     volumes:
       - .:/workspace
       - /workspace/node_modules
+
+  dev:
+    build:
+      context: .
+      target: tooling
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    init: true
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - .:/workspace
+      - /workspace/node_modules
+
+  build:
+    build:
+      context: .
+      target: build
+
+  web:
+    build:
+      context: .
+      target: web
+    ports:
+      - "127.0.0.1:8080:8080"
