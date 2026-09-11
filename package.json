@@ -1,0 +1,17 @@
+{
+  "name": "engine-sound-simulator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Planning and development tooling for a procedural engine sound simulator",
+  "engines": {
+    "node": ">=24.21.0 <25"
+  },
+  "scripts": {
+    "check": "prettier --check . && markdownlint-cli2 '**/*.md' '#node_modules'",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "markdownlint-cli2": "0.23.2",
+    "prettier": "3.9.6"
+  }
+}

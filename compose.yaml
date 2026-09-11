@@ -1,0 +1,10 @@
+services:
+  tools:
+    build:
+      context: .
+      target: tooling
+    init: true
+    network_mode: none
+    volumes:
+      - .:/workspace
+      - /workspace/node_modules
