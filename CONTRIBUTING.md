@@ -21,7 +21,7 @@ make ci
 ## ブランチと PR
 
 - 既定ブランチは `main`。`feat/...`、`fix/...`、`docs/...`、`chore/...` を作成してください。
-- `main` への取り込みは PR と squash merge を使用します。
+- `main` への取り込みは PR の **Create a merge commit** を使用し、ブランチ内のコミット履歴を保持します。
 - `Repository checks` の成功、最新の `main` への追従、レビュー会話の解決を必須とします。
 - 個人開発を想定して他者承認数は 0、管理者の bypass は設けません。共同開発になったら承認数を 1 に変更します。
 - `main` の削除・force push は禁止です。初期投入後は直接 push できません。
