@@ -12,7 +12,8 @@ The selected ticket is the contract. Compare against the current main merge-base
 - UI changes: keyboard/pointer cancellation, focus, labels, state/errors and browser start/resume restrictions.
 - Build/configuration changes: clean Docker build, host-independent dependencies, public asset paths, CI trigger/check names, no secret leakage or weakened protection.
 - Documentation: when behavior, commands or supported scope changes, check README and CONTRIBUTING against the implementation; update affected startup instructions, URLs, CI descriptions and implementation status.
-- Tests: they exercise observable behavior and failure modes; mocking has not removed the property the acceptance criterion requires.
+- Tests: they exercise observable behavior and failure modes; mocking has not removed the property the acceptance criterion requires. Trace each acceptance claim to the actual assertion and executed path: graph construction is not processor readiness, a harness is not the product loader, and enabling StrictMode is not observing its remount. Distinguish injected failures from native failures.
+- Numerical changes: check finite derived values and conversions as well as inputs, reject pathological per-call work, and define what state is preserved after a rejected advance. For sample-driven integration, compare changing-input trajectories across buffer partitions, not only final state under constant input.
 
 Only apply relevant dimensions. Style issues already covered by formatters do not need separate reviewer rounds.
 
@@ -26,11 +27,11 @@ Use an isolated Compose project and temporary fixture/worktree when the scenario
 
 For each finding record path/line, impact, evidence and verification. Distinguish confirmed defects from assumptions. Reproduce or trace it; fix confirmed actionable issues, and record why a finding was not applicable when justified. Do not dismiss real low-severity bugs solely to report zero findings.
 
-After corrections, run the affected tests and review both the correction and possible regressions. Run the complete `make ci` before delivery. If code changes after the independent review, have the reviewer check the substantive changes; do not keep an obsolete clean verdict. A report-only or formatting-only edit needs proportional verification rather than another full agent audit.
+After corrections, run the affected tests and review both the correction and possible regressions. Run the complete `make ci` on the implementation/delivery-tree revision. A subsequent evidence-only Markdown commit follows [orchestration.md](orchestration.md): document/catalog and committed-history secret checks locally, plus the required GitHub gate on the final head. Do not claim that final head passed a local full gate unless it actually did. If code changes after the independent review, have the reviewer check the substantive changes; do not keep an obsolete clean verdict. A report-only or formatting-only edit needs proportional verification rather than another full agent audit.
 
 ## Completion record
 
-Use the report template. Record implementation revision, reviewer role/model if observable, reviewed scope, findings/fixes, acceptance evidence, actual commands/outcomes and pending manual work. Do not paste private reasoning or full conversation logs.
+Use the report template. Record implementation revision, reviewer role/model if observable, reviewed scope, findings/fixes, acceptance evidence, actual commands/outcomes and pending manual work. Name the relevant test file/case or artifact for each acceptance claim; successful parsing alone does not prove every preset constant. Refresh counts from the final run, or omit counts that add no evidence. Do not paste private reasoning or full conversation logs.
 
 `Status: verified` means every mandatory acceptance criterion has evidence and there are no unresolved actionable findings in the delivered change. Deferred pre-existing bugs must satisfy [the incidental-bug policy](incidental-bugs.md) and be linked as known limitations. It is not proof of perfect software. Automated PCM/browser checks cannot prove that Windows speakers sounded correct, or that a specific physical device met a latency target. If that is mandatory and unavailable, use `Status: manual-validation-pending`; create/update the Draft PR with the explicit limitation.
 

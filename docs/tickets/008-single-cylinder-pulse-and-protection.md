@@ -43,3 +43,8 @@ pulse 生成と protection/filter テストは分けられる。event 入出力�
 ## 手動証跡
 
 RMS、DC、peak、sampleRate、テスト条件を PR に記録する。聴感は次件の統合後に確認する。
+
+## チケット6完了後の接続契約
+
+- offline rendererは実際のsampleRateと有限サイズのbufferで進め、10秒を超える検証も複数回のadvanceで行う。チケット6のadvanceFramesの10秒上限を緩めない。
+- 同じevent/input列を1・127・128・不均一frameへ分割して比較し、10秒超のレンダリングでもpulse/filter状態と有限値を維持する。Worklet統合時に同じDSP処理を再利用できる入力契約にする。

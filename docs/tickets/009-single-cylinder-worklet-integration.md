@@ -43,3 +43,12 @@ processor 統合、UI meter、E2E は分けられる。limiter state contract �
 ## 手動証跡
 
 Windows Chromium/Edge で idle、開閉、limiter、停止を聞き、browser、device、sampleRate、異音/音切れの有無をPRへ残す。
+
+## チケット6完了後の接続契約
+
+- 既存のEngineAudioConfig（versionのみ）とtelemetry（framesRenderedのみ）を、EngineConfigのversion付きsnapshot、RPM、実効開度、limiter状態へ具体化する。controllerが正常構成を保持し、node再作成時にも初期構成を渡す。
+- 初期構成の検証とdynamics/phase/DSP初期化が成功した後だけreadyを返し、controllerはそれ以前にrunningやunmuteへ進まない。初期化失敗は無音と型付き通知にし、再試行可能な正常構成を保持する。
+- audio frame順に入力→1 kHz境界のdynamics更新→保持角速度でphase/event→DSPを処理する。各境界で対応sampleのa-rate値を読む（長さ1は保持）。全blockを最後の入力でadvanceする処理や二重advanceを避ける。
+- limiter用のdrive torque倍率/許可状態をdynamicsへ渡す契約を追加し、pulseと同じcut/restart状態を使う。throttleを0にするだけでは吸気遅れが残るため代用しない。idle assistをcut対象に含めるか、hysteresis閾値、対応RPM/event密度上限も明記する。
+- block途中の開度変化、scalar/vector等価入力、44.1/48 kHz、不均一blockを検証する。ready前の無音、processor再作成、limiterのtorque/pulse同期、例外時無音化も実際の統合経路で確認する。
+- 初期構成はnode作成時のprocessorOptionsにrequest idとsnapshotを含める。processorはその構成の初期化成功でconfig-applied(requestId)を送り、その後に同じrequest id付きreadyを返す。controllerは現在のnodeと要求に一致する両応答までstarting/無音を維持する。拒否時はconfig-rejectedを返してreadyを送らない。順序逆転・古いid・古いnodeの応答でrunningへ進まないテストを追加する。

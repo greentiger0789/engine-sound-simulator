@@ -45,3 +45,7 @@ exhaust filter と intake path は分けられる。output protection との接�
 ## 完了報告と聴感
 
 `reports/015.md` に自動結果を残す。人の音質判断はM4 reviewまで必須にしない。
+
+## チケット6完了後の接続契約
+
+- 静的validatorが受け入れる正のresonanceHzでも実sampleRateのNyquistを超え得る。DSP初期化時に安全な上限へ写像するか拒否するかを明記し、正常構成の保持規則と整合させる。44.1/48 kHzでNyquist超過入力・再初期化・有限出力を検証する。

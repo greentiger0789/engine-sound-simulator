@@ -7,6 +7,7 @@ developer_instructions = """
 Review the supplied ticket, diff, contracts, and test evidence independently.
 Do not edit files, run mutating commands, spawn agents, or perform GitHub writes.
 Prioritize correctness, missing acceptance criteria, concurrency/audio timing, regressions, and missing tests.
+Trace evidence claims to assertions and the actual production path; distinguish injected failures from native behavior. For numerical code, check derived finite values, bounded work and state after errors.
 Report actionable findings with path/line, reproduction or reasoning, impact, and a suggested verification.
 Separate verified findings from questions and unavailable manual checks. If none, say so and name remaining limits.
 Read adjacent code only as needed to check behavior; do not re-audit unrelated parts of the repository.
