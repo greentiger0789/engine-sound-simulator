@@ -4,7 +4,7 @@
 
 まず4ストロークのバイクから始め、将来は自動車へ拡張します。
 
-**現在は起動基盤の実装段階です。Web UI の土台と AudioWorklet の境界を実装済みで、エンジン計算と持続音はまだ実装していません。**
+**現在は起動基盤の実装段階です。画面操作から AudioWorklet の低音量な基準信号を開始・停止でき、音量とミュートを安全に操作できます。エンジン計算と燃焼音はまだ実装していません。**
 
 ## 実装計画
 
@@ -22,8 +22,8 @@ Docker Engine または Docker Desktop の WSL integration と、Docker Compose 
 ```bash
 make check   # コンテナのビルド、整形・Markdown の検証
 make format  # コンテナ内で整形
-make test    # AudioWorklet 境界の単体テスト
-make e2e     # Chromium で開発版・本番版の Worklet 読み込みを検証
+make test    # AudioWorklet と音声 controller の単体テスト
+make e2e     # Chromium で開発版・本番版の製品音声操作を検証
 make ci      # workflow / Dockerfile / 秘密情報検査を含む全チェック
 make shell   # 開発ツールのコンテナに入る
 ```

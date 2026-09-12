@@ -5,8 +5,9 @@ import type {
 import { ENGINE_AUDIO_PROCESSOR_NAME } from "./contracts";
 
 /**
- * Minimal worklet for establishing the real-time boundary. It deliberately
- * produces silence until the synthesis tickets supply combustion events.
+ * A deliberately modest analytical reference signal. It establishes the
+ * real-time output boundary without depending on recorded audio or on the
+ * future combustion model.
  */
 export class EngineAudioProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -29,6 +30,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
   }
 
   private framesRendered = 0;
+  private phase = 0;
 
   constructor() {
     super();
@@ -41,19 +43,47 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
     this.port.postMessage(ready);
   }
 
-  process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
-    for (let outputIndex = 0; outputIndex < outputs.length; outputIndex += 1) {
-      const output = outputs[outputIndex];
-      for (
-        let channelIndex = 0;
-        channelIndex < output.length;
-        channelIndex += 1
-      ) {
-        const channel = output[channelIndex];
-        channel.fill(0);
-        this.framesRendered += channel.length;
+  process(
+    _inputs: Float32Array[][],
+    outputs: Float32Array[][],
+    parameters: Record<string, Float32Array>,
+  ): boolean {
+    const frameCount = outputs.reduce(
+      (largest, output) =>
+        Math.max(
+          largest,
+          output.reduce((size, channel) => Math.max(size, channel.length), 0),
+        ),
+      0,
+    );
+    const gain = parameters.gain;
+
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      // Keep the reference well below full scale. The second harmonic makes it
+      // easy to distinguish from accidental silence while remaining finite.
+      const reference =
+        0.04 * (Math.sin(this.phase) + 0.25 * Math.sin(this.phase * 2));
+      const requestedGain =
+        gain === undefined ? 1 : (gain[Math.min(frame, gain.length - 1)] ?? 1);
+      const sample = Number.isFinite(requestedGain)
+        ? reference * Math.min(1, Math.max(0, requestedGain))
+        : 0;
+
+      for (const output of outputs) {
+        for (const channel of output) {
+          if (frame < channel.length) {
+            channel[frame] = sample;
+          }
+        }
+      }
+
+      this.phase += (2 * Math.PI * 110) / sampleRate;
+      if (this.phase >= 2 * Math.PI) {
+        this.phase -= 2 * Math.PI;
       }
     }
+
+    this.framesRendered += frameCount;
 
     return true;
   }

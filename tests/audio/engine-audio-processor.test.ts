@@ -44,7 +44,7 @@ describe("EngineAudioProcessor", () => {
   });
 
   it.each([44100, 48000])(
-    "reports the runtime %d Hz sample rate and silences variable frame sizes",
+    "reports the runtime %d Hz sample rate and renders a finite low-level reference signal for variable frame sizes",
     async (runtimeSampleRate) => {
       vi.stubGlobal("sampleRate", runtimeSampleRate);
       await import("../../src/audio/worklets/engine-audio-processor");
@@ -58,10 +58,16 @@ describe("EngineAudioProcessor", () => {
       ]);
 
       for (const frameCount of [1, 127, 129, 257]) {
-        const left = new Float32Array(frameCount).fill(0.75);
-        const right = new Float32Array(frameCount).fill(-0.5);
-        expect(processor.process([], [[left, right]], {})).toBe(true);
-        expect([...left, ...right]).toEqual(new Array(frameCount * 2).fill(0));
+        const left = new Float32Array(frameCount);
+        const right = new Float32Array(frameCount);
+        expect(
+          processor.process([], [[left, right]], {
+            gain: new Float32Array([1]),
+          }),
+        ).toBe(true);
+        expect([...left, ...right].every(Number.isFinite)).toBe(true);
+        expect(Math.max(...left.map(Math.abs))).toBeLessThan(0.06);
+        expect(left).toEqual(right);
       }
     },
   );
@@ -74,5 +80,24 @@ describe("EngineAudioProcessor", () => {
       expect.objectContaining({ name: "throttle", automationRate: "a-rate" }),
       expect.objectContaining({ name: "gain", automationRate: "a-rate" }),
     ]);
+  });
+
+  it("uses both scalar and per-frame gain automation", async () => {
+    vi.stubGlobal("sampleRate", 48000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const processor = new registeredProcessor!();
+    const scalar = new Float32Array(8);
+    const automated = new Float32Array(8);
+
+    processor.process([], [[scalar]], { gain: new Float32Array([0]) });
+    processor.process([], [[automated]], {
+      gain: new Float32Array([0, 1, 0, 1, 0, 1, 0, 1]),
+    });
+
+    expect([...scalar]).toEqual(new Array(8).fill(0));
+    expect(automated[0]).toBe(0);
+    expect(automated[2]).toBe(0);
+    expect(automated[1]).not.toBe(0);
+    expect(automated[3]).not.toBe(0);
   });
 });
