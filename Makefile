@@ -1,5 +1,7 @@
 .DEFAULT_GOAL := help
 
+DOCKER_COMPOSE ?= docker compose
+
 .PHONY: help check format shell ticket lint-actions lint-docker secrets ci dev down build test e2e
 help:
 	@echo 'make check        Check application, formatting, and Markdown in Docker'
@@ -35,10 +37,11 @@ test:
 	docker compose run --build --rm tools npm run test
 
 e2e:
-	@e2e_project=ess-e2e-$$$$; status=0; \
-		docker compose -p "$$e2e_project" up --build --abort-on-container-exit --exit-code-from e2e e2e || status=$$?; \
-		docker compose -p "$$e2e_project" down --volumes; \
-		exit $$status
+	@e2e_project=ess-e2e-$$$$; test_status=0; cleanup_status=0; \
+		$(DOCKER_COMPOSE) -f compose.yaml -f compose.e2e.yaml -p "$$e2e_project" up --build --abort-on-container-exit --exit-code-from e2e e2e || test_status=$$?; \
+		$(DOCKER_COMPOSE) -f compose.yaml -f compose.e2e.yaml -p "$$e2e_project" down --volumes || cleanup_status=$$?; \
+		if [ "$$test_status" -ne 0 ]; then exit "$$test_status"; fi; \
+		exit "$$cleanup_status"
 
 ticket:
 	docker compose run --build --rm -e TICKET tools sh -c 'node scripts/tickets.mjs show "$$TICKET"'

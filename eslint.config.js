@@ -22,6 +22,7 @@ export default tseslint.config(
   {
     files: [
       "vite.config.ts",
+      "vite.e2e.config.ts",
       "playwright.config.ts",
       "tests/audio/**/*.ts",
       "tests/e2e/**/*.spec.ts",

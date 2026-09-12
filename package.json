@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "npm run typecheck && vite build",
+    "build:e2e-harness": "vite build --config vite.e2e.config.ts",
     "check": "prettier --check . && markdownlint-cli2 '**/*.md' '#node_modules' && npm run check:tickets && npm run test:tooling && npm run lint && npm run typecheck",
     "check:tickets": "node scripts/tickets.mjs check",
     "dev": "vite",
