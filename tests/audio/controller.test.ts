@@ -266,6 +266,21 @@ describe("AudioController", () => {
     expect(FakeAudioContext.instances[0].close).toHaveBeenCalledOnce();
   });
 
+  it("queues a requested restart until an in-progress stop has completed", async () => {
+    const controller = new AudioController();
+    await controller.start();
+
+    const stopping = controller.stop();
+    const restarting = controller.start();
+    await vi.advanceTimersByTimeAsync(30);
+    await stopping;
+    await restarting;
+
+    expect(FakeAudioContext.instances).toHaveLength(2);
+    expect(FakeAudioWorkletNode.instances).toHaveLength(2);
+    expect(controller.getSnapshot().status).toBe("running");
+  });
+
   it("only enters running after its active processor reports ready", async () => {
     FakeAudioWorkletNode.automaticallyReady = false;
     const controller = new AudioController();
@@ -273,6 +288,11 @@ describe("AudioController", () => {
     expect(controller.getSnapshot().status).toBe("starting");
 
     const lateReady = FakeAudioWorkletNode.instances[0].port.onmessage!;
+    await controller.start();
+    expect(FakeAudioContext.instances).toHaveLength(1);
+    expect(FakeAudioWorkletNode.instances).toHaveLength(1);
+    expect(controller.getSnapshot().status).toBe("starting");
+
     lateReady({ data: { type: "ready", sampleRate: 48000 } } as MessageEvent);
     expect(controller.getSnapshot().status).toBe("running");
 

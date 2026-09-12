@@ -79,11 +79,15 @@ export class AudioController {
     if (this.disposed) {
       return Promise.resolve();
     }
-    if (this.snapshot.status === "running" || this.startPromise !== null) {
-      return this.startPromise ?? Promise.resolve();
-    }
     if (this.stopPromise !== null) {
       return this.stopPromise.then(() => this.start());
+    }
+    if (
+      this.snapshot.status === "running" ||
+      this.snapshot.status === "starting" ||
+      this.startPromise !== null
+    ) {
+      return this.startPromise ?? Promise.resolve();
     }
 
     this.startPromise = this.startInternal().finally(() => {
