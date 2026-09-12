@@ -6,7 +6,7 @@ coreを作り直さず、`cycleDegrees: 360`の2ストローク設定、イベ�
 
 ## 範囲 / 非対象
 
-- 範囲: config validatorの360°許可、2ストロークpreset、phase/event/DSP regression、UI表記。
+- 範囲: config validatorの対応cycle方針と360°回帰、2ストロークpreset、phase/event/DSP regression、UI表記。
 - 非対象: 実エンジンの掃気・ポートタイミング詳細、2ストローク専用音響モデル、V型。
 
 ## 依存関係
@@ -45,3 +45,8 @@ config/phaseとUI表記は並行可能。DSPはcycle非依存contractを維持�
 ## 完了報告と聴感
 
 `reports/022.md` に自動結果を記録する。聴感は依存解除条件ではない。
+
+## チケット6完了後の接続契約
+
+- 現validatorはcycleDegreesを正の有限値として扱い360°を既に受け入れるため、単に360を許可する変更は不要。対応cycleの方針を明示し、現存構成との互換性を検証する。
+- チケット11/13の720°固定表記・入力境界・燃焼帯の目盛・アクセシブル名をactive cycleDegreesから導出する。360°/720°の適用切替、0°と周期境界を含めて検証する。

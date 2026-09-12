@@ -12,7 +12,7 @@ Ticket link, concrete behavior implemented, and implementation commit SHA review
 
 ## Acceptance evidence
 
-Map each mandatory acceptance criterion to the test, observed behavior, or artifact that verifies it. Distinguish optional phase-level listening checks from mandatory requirements.
+Map each mandatory acceptance criterion to the named test file/case and assertion, observed behavior, or artifact that verifies it. Distinguish code inspection, harness tests, product E2E and physical listening; none substitutes for another without checking the required contract. Distinguish optional phase-level listening checks from mandatory requirements.
 
 ## Review
 

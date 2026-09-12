@@ -45,3 +45,7 @@ seed、RPM、負荷、spectrumを report に記録する。聴感は任意。
 ## 完了報告と聴感
 
 `reports/016.md` に自動結果を残す。聴感確認はM4品質レビューでまとめる。
+
+## チケット6完了後の接続契約
+
+- strict parserは未知fieldを拒否する。seed/ばらつき等の追加fieldはconfig型・validator・presetと一緒に定義し、省略時defaultを持つ互換拡張かschema更新/移行かを明記する。seedの所有者とstop/start・構成再適用時のreset規則を定め、省略・不正値・再現性を検証する。

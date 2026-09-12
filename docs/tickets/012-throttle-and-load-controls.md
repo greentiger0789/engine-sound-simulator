@@ -46,3 +46,7 @@ Windowsで pointer cancel/focus loss と開度応答を確認し、操作結果�
 ## 完了報告と聴感
 
 `reports/012.md` に automated evidence を残す。人の聞き取りは必須ではない。
+
+## チケット6完了後の接続契約
+
+- チケット9のframe/1 kHz境界の入力規則を再利用する。loadはAudioParamか明示した制御周期のmessageかを選び、単位・範囲・反映時点を定義する。現在のprocessorにはload parameterがないため、controllerとprocessorを同時に更新する。
