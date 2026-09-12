@@ -20,11 +20,15 @@ This repository's ticket request includes implementation, commits, push and Draf
 - Translate acceptance criteria into a short working checklist. Choose the smallest useful split and follow [orchestration.md](references/orchestration.md). The orchestrator owns shared configuration, interfaces and repository mutations.
 - Implement the selected scope. Add tests that distinguish correct behavior from plausible failures; do not write tests that only mirror implementation details. Use the ticket's Docker commands, adding missing commands only if this ticket defines them.
 - No placeholder test success, ignored failures, relaxed main protection, fabricated manual results, or unrelated redesign to complete a ticket.
-- Maintain a concise implementation record at `docs/tickets/reports/NNN.md` using [report-template.md](references/report-template.md). Record unavailable manual checks explicitly. `Status: verified` requires all mandatory acceptance criteria satisfied; otherwise use `manual-validation-pending` or `blocked`.
+- Maintain a concise implementation record at `docs/tickets/reports/NNN.md` using [report-template.md](references/report-template.md). Prepare the record before independent review so missing deliverables are reviewed alongside code; leave unexecuted checks explicitly pending and update their results after execution. Record unavailable manual checks explicitly. `Status: verified` requires all mandatory acceptance criteria satisfied; otherwise use `manual-validation-pending` or `blocked`.
+
+## Incidental bugs in earlier work
+
+Follow [incidental-bugs.md](references/incidental-bugs.md) when a confirmed pre-existing bug is discovered during the selected ticket. Small, bounded fixes and committed bug records are authorized within the current PR; this is not permission to implement another planned ticket.
 
 ## Review → fix → verify
 
-Use [review.md](references/review.md). Review the entire task diff yourself. For substantive changes, request an independent reviewer with the ticket, diff/base, relevant contracts and evidence; do not supply your conclusion as the expected answer. Address every confirmed actionable finding, repeat affected tests and review the changes for regressions. Finish with no known unresolved actionable defects and successful relevant verification. If a requirement cannot be checked in this environment, it remains pending.
+Use [review.md](references/review.md). Review the entire task diff yourself. For substantive changes, request an independent reviewer with the ticket, diff/base, relevant contracts and evidence; do not supply your conclusion as the expected answer. Address every confirmed actionable finding, repeat affected tests and review the changes for regressions. Finish with no unresolved actionable defects in the delivered change and successful relevant verification. Pre-existing out-of-scope bugs may remain only under the incidental-bug policy, with explicit records and no impact on mandatory acceptance or the required CI gate. If a requirement cannot be checked in this environment, it remains pending.
 
 Do not stop merely because a fixed number of review rounds has elapsed. If the same cause remains after three attempted corrections, change the approach and diagnose it; when further progress requires external input, record the exact blocker and report it instead of retrying indefinitely or claiming success.
 

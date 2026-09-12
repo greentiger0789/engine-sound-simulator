@@ -28,6 +28,8 @@ If Terra or delegation is unavailable, the parent proceeds serially and records 
 
 ## Keep context small
 
-Pass paths and the relevant acceptance requirements, not the whole conversation or every ticket. Let workers read only needed files. Require a short return: changed files, verified behavior, commands/results, unresolved findings. Avoid duplicate repository-wide research and repeated full CI in each worker. The parent integrates first, then runs the full gate once per materially changed result.
+Pass paths and the relevant acceptance requirements, not the whole conversation or every ticket. Let workers read only needed files. Require a short return: changed files, verified behavior, commands/results, unresolved findings. Avoid duplicate repository-wide research and repeated full CI in each worker. The parent integrates first and prepares the implementation record before final review. During corrections, run affected checks; run the required final full gate after committing the delivery tree, including committed-history secret detection. Repeat the full gate when substantive changes or unresolved failures justify it, not merely because another review step finished. Report-only edits still need relevant formatting/document checks and the final delivery gate.
 
 Use follow-up messages to fix a bounded issue in an existing worker. Use a fresh reviewer for the initial independent assessment; subsequent reviews can focus on corrections and their impact. The parent checks the final diff as a whole. Stop finished workers rather than creating idle agent trees.
+
+Keep successful build/test output concise: retain detailed logs in temporary files when useful, report the exit status and check summary, and inspect relevant failure output. Preserve command failures when redirecting or piping output; a successful log-printing command must not mask a failed check. Do not commit logs or include entire lockfiles and repeated build output in agent handoffs.
