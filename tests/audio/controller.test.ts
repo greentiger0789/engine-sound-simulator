@@ -146,7 +146,7 @@ describe("AudioController", () => {
     await stopping;
     const calls = context.gains[0].gain.calls;
     const heldValue = calls.find(
-      ([type, _value, time]) => type === "set" && time === 10.015,
+      ([type, , time]) => type === "set" && time === 10.015,
     )?.[1];
     expect(heldValue).toBeCloseTo(0.5);
     expect(calls).toContainEqual(["ramp", 0, 10.045]);
