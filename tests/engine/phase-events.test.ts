@@ -79,6 +79,23 @@ describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
     expect(interval.nextAbsoluteDegrees).toBeGreaterThan(
       interval.previousAbsoluteDegrees,
     );
+
+    for (const sampleRate of [44_100, 48_000]) {
+      const degreesPerSample = 1e-11;
+      const nearBoundary = generator(719.99999999995);
+      const events = nearBoundary.advanceSamples(
+        new Float64Array(8).fill(
+          (degreesPerSample * sampleRate * 2 * Math.PI) / 360,
+        ),
+        sampleRate,
+      );
+      const expectedFrame = (720 - 719.99999999995) / degreesPerSample;
+      expect(events).toHaveLength(1);
+      expect(events[0]?.absoluteFrame).toBeGreaterThan(1);
+      expect(
+        Math.abs((events[0]?.absoluteFrame as number) - expectedFrame),
+      ).toBeLessThanOrEqual(1);
+    }
   });
 
   it("emits exactly 50 single-cylinder 720-degree events per second at 6000 rpm", () => {
@@ -167,6 +184,40 @@ describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
         );
         start += length;
       }
+      expect(continuousEventFields(split)).toEqual(
+        continuousEventFields(direct),
+      );
+    }
+  });
+
+  it("matches analytic timing after an abrupt non-cycle-aligned velocity change", () => {
+    for (const sampleRate of [44_100, 48_000]) {
+      const threeDegreesPerSample = (3 * sampleRate * 2 * Math.PI) / 360;
+      const velocities = new Float64Array(64);
+      velocities.fill(threeDegreesPerSample, 10, 50);
+      const options = {
+        cycleDegrees: 720,
+        cylinders: [{ id: "one", firingAngleDeg: 200 }],
+        initialPhaseDegrees: 100,
+      } as const;
+      const direct = new FiringEventGenerator(options).advanceSamples(
+        velocities,
+        sampleRate,
+      );
+      const splitGenerator = new FiringEventGenerator(options);
+      const split = [
+        ...splitGenerator.advanceSamples(
+          velocities.subarray(0, 13),
+          sampleRate,
+        ),
+        ...splitGenerator.advanceSamples(
+          velocities.subarray(13, 41),
+          sampleRate,
+        ),
+        ...splitGenerator.advanceSamples(velocities.subarray(41), sampleRate),
+      ];
+      expect(direct).toHaveLength(1);
+      expect(direct[0]?.absoluteFrame).toBeCloseTo(43 + 1 / 3, 10);
       expect(continuousEventFields(split)).toEqual(
         continuousEventFields(direct),
       );

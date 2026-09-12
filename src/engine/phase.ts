@@ -97,21 +97,16 @@ export class CrankPhaseIntegrator {
     const summedPhase = previous.phaseDegrees + compensatedDelta;
     const nextCompensationDegrees =
       summedPhase - previous.phaseDegrees - compensatedDelta;
-    let cycleAdvance = Math.floor(summedPhase / this.cycleDegrees);
+    const cycleAdvance = Math.floor(summedPhase / this.cycleDegrees);
     let nextPhaseDegrees = summedPhase - cycleAdvance * this.cycleDegrees;
     // Canonicalize only values adjacent to a cycle boundary. In particular,
     // do not snap an ordinary tiny advance away from phase zero.
     const boundaryEpsilonDegrees = Math.min(
       PHASE_BOUNDARY_EPSILON_DEGREES,
       this.cycleDegrees * 1e-12,
+      deltaDegrees * 1e-6,
     );
-    if (
-      deltaDegrees > 0 &&
-      this.cycleDegrees - nextPhaseDegrees < boundaryEpsilonDegrees
-    ) {
-      cycleAdvance += 1;
-      nextPhaseDegrees = 0;
-    } else if (cycleAdvance > 0 && nextPhaseDegrees < boundaryEpsilonDegrees) {
+    if (cycleAdvance > 0 && nextPhaseDegrees < boundaryEpsilonDegrees) {
       nextPhaseDegrees = 0;
     }
     const nextCycleIndex = previous.cycleIndex + cycleAdvance;
