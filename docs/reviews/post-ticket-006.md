@@ -60,6 +60,8 @@ Sol / mediumを親、Terra / mediumを実装、Terra / highを独立レビュー
 
 ## 検証記録
 
-Docker内の`npm run check`が成功（Prettier、Markdownlint、ticket catalog、tooling 9 tests、ESLint、TypeScript）。最初の実行は本レポートの表の整形で停止し、整形後の再実行が成功した。skill-creatorのquick_validateとCodex TOML parseもDocker内で成功。既存実装の新しい聴感・性能証拠はない。
+Docker内の`npm run check`が成功（Prettier、Markdownlint、ticket catalog、tooling 9 tests、ESLint、TypeScript）。最初の実行は本レポートの表の整形で停止し、整形後の再実行が成功した。skill-creatorのquick_validateとCodex TOML parseもDocker内で成功した。
+
+コミット`73b8181`に対する`make ci`が成功した。41 unit tests、production build、dev/Nginxの12 Playwright tests、actionlint、Hadolint、committed-history Gitleaksを含む。この結果を記録する後続のMarkdown-only commitには文書/catalog検査とGitleaksを実施し、最終headの全ゲートはGitHub `Repository checks`で確認する。既存実装の新しい聴感・性能証拠はない。
 
 独立したTerra / highレビュアーは、CIの比例再検証ルールと初期構成のack/ready順序に2件の指摘を行った。前者は実装revisionの全CIと、後続の証跡のみのrevisionに必要な検証を明確に分離した。後者はrequest id付き`config-applied`の後に同じidの`ready`を受け取るまで無音を維持し、古い応答や順序逆転を拒否する契約へ修正した。修正後の再レビューではactionableな指摘は残らなかった。
