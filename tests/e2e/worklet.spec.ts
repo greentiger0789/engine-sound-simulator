@@ -34,11 +34,28 @@ async function instrumentAudioGraph(
         __e2eAudioWorkletNodeCount?: number;
         __e2eWorkletLoadCount?: number;
         __e2eAudioWorkletNodes?: AudioWorkletNode[];
+        __e2eAppMountCount?: number;
+        __e2eAppCleanupCount?: number;
       };
       trackedWindow.__e2eAudioContextCount = 0;
       trackedWindow.__e2eAudioWorkletNodeCount = 0;
       trackedWindow.__e2eWorkletLoadCount = 0;
       trackedWindow.__e2eAudioWorkletNodes = [];
+      trackedWindow.__e2eAppMountCount = 0;
+      trackedWindow.__e2eAppCleanupCount = 0;
+      window.addEventListener(
+        "engine-simulator:app-lifecycle",
+        (event: Event) => {
+          const lifecycleEvent = event as CustomEvent<"mounted" | "cleaned-up">;
+          if (lifecycleEvent.detail === "mounted") {
+            trackedWindow.__e2eAppMountCount =
+              (trackedWindow.__e2eAppMountCount ?? 0) + 1;
+          } else if (lifecycleEvent.detail === "cleaned-up") {
+            trackedWindow.__e2eAppCleanupCount =
+              (trackedWindow.__e2eAppCleanupCount ?? 0) + 1;
+          }
+        },
+      );
 
       const NativeAudioContext = window.AudioContext;
       window.AudioContext = new Proxy(NativeAudioContext, {
@@ -79,6 +96,17 @@ async function instrumentAudioGraph(
 async function audioGraphCount(
   page: Page,
   property: "__e2eAudioContextCount" | "__e2eAudioWorkletNodeCount",
+): Promise<number | undefined> {
+  return page.evaluate((countProperty) => {
+    const trackedWindow = window as typeof window &
+      Record<typeof countProperty, number | undefined>;
+    return trackedWindow[countProperty];
+  }, property);
+}
+
+async function appLifecycleCount(
+  page: Page,
+  property: "__e2eAppMountCount" | "__e2eAppCleanupCount",
 ): Promise<number | undefined> {
   return page.evaluate((countProperty) => {
     const trackedWindow = window as typeof window &
@@ -190,11 +218,19 @@ test("deduplicates rapid starts and permits lifecycle restart without graph dupl
   await instrumentAudioGraph(page);
   await page.goto("/");
 
-  // In the dev project, React StrictMode has already mounted, cleaned up, and
-  // remounted the tree by this point. The production Nginx project does not
-  // perform that development-only remount, but exercises the same restart
-  // contract. Dispatching twice in the same task keeps the second event ahead
-  // of React's disabled-button commit.
+  if (workletServer() === "dev") {
+    await expect
+      .poll(() => appLifecycleCount(page, "__e2eAppMountCount"))
+      .toBe(2);
+    await expect
+      .poll(() => appLifecycleCount(page, "__e2eAppCleanupCount"))
+      .toBe(1);
+  }
+
+  // The production Nginx project does not perform the development-only
+  // StrictMode remount, but exercises the same restart contract. Dispatching
+  // twice in the same task keeps the second event ahead of React's
+  // disabled-button commit.
   await page.getByRole("button", { name: "Start audio" }).evaluate((button) => {
     const startButton = button as HTMLButtonElement;
     startButton.click();

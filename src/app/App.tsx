@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import {
   createBrowserAudioController,
@@ -22,6 +22,22 @@ export function App() {
   );
   const getSnapshot = useCallback(() => controller.getSnapshot(), [controller]);
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    window.dispatchEvent(
+      new CustomEvent("engine-simulator:app-lifecycle", {
+        detail: "mounted",
+      }),
+    );
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent("engine-simulator:app-lifecycle", {
+          detail: "cleaned-up",
+        }),
+      );
+    };
+  }, []);
 
   const start = useCallback(() => {
     void controller.start();

@@ -266,6 +266,26 @@ describe("AudioController", () => {
     expect(FakeAudioContext.instances[0].close).toHaveBeenCalledOnce();
   });
 
+  it("completes a queued stop when the in-flight worklet load fails", async () => {
+    let failLoad: ((reason: Error) => void) | undefined;
+    FakeAudioContext.loadWorklet = () =>
+      new Promise<void>((_resolve, reject) => {
+        failLoad = reject;
+      });
+    const controller = new AudioController();
+    const starting = controller.start();
+    const stopping = controller.stop();
+    failLoad?.(new Error("module fetch failed"));
+
+    await starting;
+    await stopping;
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "idle",
+      error: null,
+    });
+    expect(FakeAudioContext.instances[0].close).toHaveBeenCalledOnce();
+  });
+
   it("queues a requested restart until an in-progress stop has completed", async () => {
     const controller = new AudioController();
     await controller.start();

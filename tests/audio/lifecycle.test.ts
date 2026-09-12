@@ -67,6 +67,10 @@ describe("transitionAudioLifecycle", () => {
       accepted: true,
       status: "starting",
     });
+    expect(transitionAudioLifecycle("error", "stop-requested")).toEqual({
+      accepted: true,
+      status: "stopping",
+    });
   });
 });
 

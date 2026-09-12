@@ -58,7 +58,10 @@ function getNextStatus(
     return "starting";
   if (status === "starting" && event === "processor-ready") return "running";
   if (
-    (status === "starting" || status === "running" || status === "suspended") &&
+    (status === "starting" ||
+      status === "running" ||
+      status === "suspended" ||
+      status === "error") &&
     event === "stop-requested"
   )
     return "stopping";
