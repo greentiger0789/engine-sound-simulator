@@ -73,3 +73,83 @@ test("reports a discriminable shared-loader failure for an invalid module URL", 
     )
     .toContain("error:worklet-load-failed");
 });
+
+test("runs the product audio controls without creating audio before the user starts it", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const trackedWindow = window as typeof window & {
+      __e2eAudioContextCount?: number;
+      __e2eAudioWorkletNodeCount?: number;
+    };
+    trackedWindow.__e2eAudioContextCount = 0;
+    trackedWindow.__e2eAudioWorkletNodeCount = 0;
+
+    const NativeAudioContext = window.AudioContext;
+    window.AudioContext = new Proxy(NativeAudioContext, {
+      construct(target, argumentsList, newTarget) {
+        trackedWindow.__e2eAudioContextCount =
+          (trackedWindow.__e2eAudioContextCount ?? 0) + 1;
+        return Reflect.construct(target, argumentsList, newTarget);
+      },
+    });
+
+    const NativeAudioWorkletNode = window.AudioWorkletNode;
+    window.AudioWorkletNode = new Proxy(NativeAudioWorkletNode, {
+      construct(target, argumentsList, newTarget) {
+        trackedWindow.__e2eAudioWorkletNodeCount =
+          (trackedWindow.__e2eAudioWorkletNodeCount ?? 0) + 1;
+        return Reflect.construct(target, argumentsList, newTarget);
+      },
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+  await expect(page.getByRole("button", { name: "Stop audio" })).toBeDisabled();
+  await expect(page.getByLabel("Mute audio")).not.toBeChecked();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { __e2eAudioContextCount?: number })
+            .__e2eAudioContextCount,
+      ),
+    )
+    .toBe(0);
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { __e2eAudioWorkletNodeCount?: number })
+            .__e2eAudioWorkletNodeCount,
+      ),
+    )
+    .toBe(1);
+
+  await page.getByLabel("Volume").fill("0.35");
+  await expect(page.getByLabel("Volume")).toHaveValue("0.35");
+  await page.getByLabel("Mute audio").check();
+  await expect(page.getByLabel("Mute audio")).toBeChecked();
+
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { __e2eAudioWorkletNodeCount?: number })
+            .__e2eAudioWorkletNodeCount,
+      ),
+    )
+    .toBe(2);
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});

@@ -37,5 +37,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
 FROM web AS e2e-web
 
 COPY --from=e2e-harness /workspace/dist-e2e /usr/share/nginx/html/__e2e__
-COPY --from=build /workspace/dist/assets/engine-audio-worklet.js \
-  /usr/share/nginx/html/__e2e__/assets/engine-audio-worklet.js
+# The Worklet can share emitted chunks with the product entry. Copy its complete
+# asset graph under the harness base instead of assuming a single-file bundle.
+COPY --from=build /workspace/dist/assets \
+  /usr/share/nginx/html/__e2e__/assets

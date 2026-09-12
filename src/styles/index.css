@@ -34,7 +34,103 @@ textarea {
 }
 
 .controller-area {
+  display: grid;
+  align-content: center;
+  gap: 1.5rem;
   min-height: min(32rem, calc(100vh - 2rem));
+  max-width: 42rem;
+  margin: auto;
+  padding: clamp(1.5rem, 5vw, 3rem);
   border: 1px solid #344251;
   border-radius: 0.75rem;
+  background: linear-gradient(145deg, #1a2430, #11161d 65%);
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+h1 {
+  margin-top: 0.35rem;
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  line-height: 1.05;
+}
+
+.eyebrow {
+  color: #8ed0ff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.intro {
+  max-width: 38rem;
+  margin-top: 0.9rem;
+  color: #b6c2cf;
+}
+
+.transport,
+.control-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+button {
+  padding: 0.7rem 1rem;
+  border: 1px solid #77c4f5;
+  border-radius: 0.4rem;
+  color: #06121a;
+  background: #8ed0ff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button + button {
+  color: #dce9f4;
+  border-color: #607385;
+  background: transparent;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.range-control {
+  display: grid;
+  grid-template-columns: auto minmax(9rem, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  flex: 1 1 22rem;
+}
+
+.range-control input {
+  min-width: 0;
+}
+
+.mute-control {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: 600;
+}
+
+.status {
+  color: #b6c2cf;
+}
+
+.status output {
+  color: #e8ecf1;
+  font-weight: 700;
+}
+
+.error {
+  padding: 0.75rem;
+  border-left: 3px solid #ff847c;
+  color: #ffd2ce;
+  background: #3c1e24;
 }
