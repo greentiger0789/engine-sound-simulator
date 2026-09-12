@@ -16,7 +16,7 @@ The user requests cost-conscious subagents. Use `gpt-5.6-terra` with `medium` ef
 
 Workers must not delegate recursively or commit/push/create PRs. Pass only the task, acceptance criteria, owned paths, and required contracts. Do not fork the entire conversation when selecting a lower-cost model.
 
-Continue the review → fix → relevant tests loop until no actionable findings remain. Record untestable requirements as pending; never claim defect-free software or fabricate listening/performance evidence.
+Continue the review → fix → relevant tests loop until no actionable findings remain in the delivered change. For incidental pre-existing bugs, follow [the skill policy](.agents/skills/implement-ticket/references/incidental-bugs.md): include small verified fixes, or commit larger out-of-scope bug records and disclose them; never defer current regressions or bypass acceptance/CI blockers. Record untestable requirements as pending; never claim defect-free software or fabricate listening/performance evidence.
 
 ## Project invariants
 
