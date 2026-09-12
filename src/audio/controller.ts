@@ -1,12 +1,16 @@
 import { loadEngineAudioWorklet } from "./load-worklet";
+import {
+  toDisplayableAudioError,
+  transitionAudioLifecycle,
+  type AudioLifecycleStatus,
+} from "./lifecycle";
 import { resolveEngineAudioWorkletModuleUrl } from "./worklet-module-url";
 import {
   ENGINE_AUDIO_PROCESSOR_NAME,
   type ProcessorToControllerMessage,
 } from "./worklets/contracts";
 
-export type AudioControllerStatus =
-  "idle" | "starting" | "running" | "stopping" | "suspended" | "error";
+export type AudioControllerStatus = AudioLifecycleStatus;
 
 export type AudioControllerErrorCode =
   | "insecure-context"
@@ -84,9 +88,17 @@ export class AudioController {
     }
     if (
       this.snapshot.status === "running" ||
-      this.snapshot.status === "starting" ||
-      this.startPromise !== null
+      this.snapshot.status === "starting"
     ) {
+      const transition = transitionAudioLifecycle(
+        this.snapshot.status,
+        "start-requested",
+      );
+      if (!transition.accepted) {
+        return this.startPromise ?? Promise.resolve();
+      }
+    }
+    if (this.startPromise !== null) {
       return this.startPromise ?? Promise.resolve();
     }
 
@@ -138,7 +150,12 @@ export class AudioController {
 
   private async startInternal(): Promise<void> {
     this.stopRequested = false;
-    this.setSnapshot({ status: "starting", error: null });
+    const transition = transitionAudioLifecycle(
+      this.snapshot.status,
+      "start-requested",
+    );
+    if (!transition.accepted) return;
+    this.setSnapshot({ status: transition.status, error: null });
 
     if (globalThis.isSecureContext === false) {
       this.fail("insecure-context", "Audio requires a secure context.", false);
@@ -167,7 +184,13 @@ export class AudioController {
         if (this.stopRequested || this.disposed) return;
         this.scheduleFade(this.fadeGain, this.context.currentTime, 0, 1);
         if (this.processorReady) {
-          this.setSnapshot({ status: "running", error: null });
+          const readyTransition = transitionAudioLifecycle(
+            this.snapshot.status,
+            "processor-ready",
+          );
+          if (readyTransition.accepted) {
+            this.setSnapshot({ status: readyTransition.status, error: null });
+          }
         }
         return;
       }
@@ -186,10 +209,8 @@ export class AudioController {
         resolveEngineAudioWorkletModuleUrl(),
       );
       if (!loadResult.ok) {
-        this.fail(
-          "worklet-load-failed",
-          "The audio processor could not be loaded.",
-          true,
+        this.failDisplayable(
+          toDisplayableAudioError({ type: "worklet-load-failed" }),
         );
         await this.teardown();
         return;
@@ -232,7 +253,12 @@ export class AudioController {
   }
 
   private async stopInternal(): Promise<void> {
-    this.setSnapshot({ status: "stopping" });
+    const transition = transitionAudioLifecycle(
+      this.snapshot.status,
+      "stop-requested",
+    );
+    if (!transition.accepted) return;
+    this.setSnapshot({ status: transition.status });
     const context = this.context;
     const fadeGain = this.fadeGain;
     if (context !== null && fadeGain !== null) {
@@ -243,7 +269,12 @@ export class AudioController {
       );
     }
     await this.teardown();
-    if (!this.disposed) this.setSnapshot({ status: "idle", error: null });
+    if (!this.disposed) {
+      const transition = transitionAudioLifecycle("stopping", "stopped");
+      if (transition.accepted) {
+        this.setSnapshot({ status: transition.status, error: null });
+      }
+    }
   }
 
   private applyVolume(): void {
@@ -264,7 +295,13 @@ export class AudioController {
     if (event.data.type === "ready") {
       this.processorReady = true;
       if (this.snapshot.status === "starting") {
-        this.setSnapshot({ status: "running", error: null });
+        const transition = transitionAudioLifecycle(
+          this.snapshot.status,
+          "processor-ready",
+        );
+        if (transition.accepted) {
+          this.setSnapshot({ status: transition.status, error: null });
+        }
       }
     } else if (event.data.type === "fatal-error") {
       this.fail("fatal-error", event.data.message, false);
@@ -273,11 +310,7 @@ export class AudioController {
   };
 
   private handleProcessorError(): void {
-    this.fail(
-      "processor-error",
-      "The audio processor stopped unexpectedly.",
-      true,
-    );
+    this.failDisplayable(toDisplayableAudioError({ type: "processorerror" }));
     void this.teardown();
   }
 
@@ -306,6 +339,10 @@ export class AudioController {
       status: "error",
       error: { code, message, recoverable },
     });
+  }
+
+  private failDisplayable(error: AudioControllerError): void {
+    this.setSnapshot({ status: "error", error });
   }
 
   private teardown(): Promise<void> {
