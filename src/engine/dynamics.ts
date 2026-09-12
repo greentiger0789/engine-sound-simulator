@@ -7,6 +7,8 @@ import {
 /** The fixed simulation cadence used by the audio-frame accumulator. */
 export const DYNAMICS_HZ = 1_000;
 export const DYNAMICS_STEP_SECONDS = 1 / DYNAMICS_HZ;
+/** Upper bound for one real-time call; longer runs must use normal blocks. */
+export const MAX_FRAME_ADVANCE_SECONDS = 10;
 
 const TWO_PI = 2 * Math.PI;
 
@@ -124,7 +126,11 @@ export function interpolateTorqueCurve(
     if (!upper || !lower) continue;
     if (rpm <= upper.rpm) {
       const proportion = (rpm - lower.rpm) / (upper.rpm - lower.rpm);
-      return lower.torqueNm + proportion * (upper.torqueNm - lower.torqueNm);
+      const torqueDelta = upper.torqueNm - lower.torqueNm;
+      requireFinite("torqueCurve torque delta", torqueDelta);
+      const interpolatedTorque = lower.torqueNm + proportion * torqueDelta;
+      requireFinite("interpolated torque", interpolatedTorque);
+      return interpolatedTorque;
     }
   }
   return last.torqueNm;
@@ -152,6 +158,7 @@ export class RotationalDynamics {
       throw new RangeError("config is not a valid EngineConfig");
     }
     this.config = parsed.value;
+    requireFinite("inverse inertiaKgM2", 1 / this.config.inertiaKgM2);
     this.options = {
       intakeLagSeconds: readOption(
         "intakeLagSeconds",
@@ -210,6 +217,11 @@ export class RotationalDynamics {
 
     const elapsedSeconds = frameCount / sampleRate;
     requireFinite("elapsedSeconds", elapsedSeconds);
+    if (elapsedSeconds > MAX_FRAME_ADVANCE_SECONDS) {
+      throw new RangeError(
+        `elapsedSeconds must not exceed ${MAX_FRAME_ADVANCE_SECONDS}`,
+      );
+    }
     const nextAccumulatorSeconds = this.accumulatorSeconds + elapsedSeconds;
     requireFinite("accumulated elapsedSeconds", nextAccumulatorSeconds);
     this.accumulatorSeconds = nextAccumulatorSeconds;
@@ -232,13 +244,16 @@ export class RotationalDynamics {
   private integrateFixedStep(): void {
     const lagCoefficient =
       1 - Math.exp(-DYNAMICS_STEP_SECONDS / this.options.intakeLagSeconds);
-    this.effectiveThrottleValue +=
+    const nextEffectiveThrottle =
+      this.effectiveThrottleValue +
       (this.requestedThrottle - this.effectiveThrottleValue) * lagCoefficient;
+    requireFinite("effective throttle", nextEffectiveThrottle);
 
     const rpm = radPerSecondToRpm(this.angularVelocity);
     const driveTorque =
-      this.effectiveThrottleValue *
+      nextEffectiveThrottle *
       interpolateTorqueCurve(this.config.torqueCurve, rpm);
+    requireFinite("drive torque", driveTorque);
     const idleError = Math.max(
       0,
       rpmToRadPerSecond(this.config.idleRpm) - this.angularVelocity,
@@ -250,20 +265,21 @@ export class RotationalDynamics {
     const frictionTorque =
       this.options.frictionTorqueNm +
       this.options.viscousFrictionNmPerRadPerSec * this.angularVelocity;
-    const acceleration =
-      (driveTorque + idleTorque - frictionTorque - this.loadTorque) /
-      this.config.inertiaKgM2;
+    requireFinite("friction torque", frictionTorque);
+    const netTorque =
+      driveTorque + idleTorque - frictionTorque - this.loadTorque;
+    requireFinite("net torque", netTorque);
+    const acceleration = netTorque / this.config.inertiaKgM2;
+    requireFinite("angular acceleration", acceleration);
     const nextAngularVelocity =
       this.angularVelocity + acceleration * DYNAMICS_STEP_SECONDS;
-    this.angularVelocity = Number.isFinite(nextAngularVelocity)
-      ? Math.max(0, nextAngularVelocity)
-      : 0;
+    requireFinite("angular velocity", nextAngularVelocity);
+    this.effectiveThrottleValue = nextEffectiveThrottle;
+    this.angularVelocity = Math.max(0, nextAngularVelocity);
   }
 
   public getState(): DynamicsState {
-    const angularVelocityRadPerSec = Number.isFinite(this.angularVelocity)
-      ? Math.max(0, this.angularVelocity)
-      : 0;
+    const angularVelocityRadPerSec = this.angularVelocity;
     return {
       angularVelocityRadPerSec,
       rpm: radPerSecondToRpm(angularVelocityRadPerSec),

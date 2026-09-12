@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DYNAMICS_HZ,
+  MAX_FRAME_ADVANCE_SECONDS,
   RotationalDynamics,
   interpolateTorqueCurve,
   radPerSecondToRpm,
@@ -56,6 +57,15 @@ describe("RotationalDynamics", () => {
     expect(() => interpolateTorqueCurve([{ rpm: 0, torqueNm: 1 }], 0)).toThrow(
       RangeError,
     );
+    expect(() =>
+      interpolateTorqueCurve(
+        [
+          { rpm: 0, torqueNm: -Number.MAX_VALUE },
+          { rpm: 1, torqueNm: Number.MAX_VALUE },
+        ],
+        0.5,
+      ),
+    ).toThrow(RangeError);
   });
 
   it("uses a lagged throttle and follows a sustained opening smoothly", () => {
@@ -132,9 +142,16 @@ describe("RotationalDynamics", () => {
     expect(() => model.advanceFrames(-1, 48_000)).toThrow(RangeError);
     expect(() => model.advanceFrames(128, 0)).toThrow(RangeError);
     expect(() => model.advanceFrames(1, Number.MIN_VALUE)).toThrow(RangeError);
+    expect(() => model.advanceFrames(MAX_FRAME_ADVANCE_SECONDS + 1, 1)).toThrow(
+      RangeError,
+    );
 
     const invalidConfig = structuredClone(singleCylinderPreset.config);
     (invalidConfig as { inertiaKgM2: number }).inertiaKgM2 = 0;
     expect(() => new RotationalDynamics(invalidConfig)).toThrow(RangeError);
+
+    const overflowConfig = structuredClone(singleCylinderPreset.config);
+    (overflowConfig as { inertiaKgM2: number }).inertiaKgM2 = Number.MIN_VALUE;
+    expect(() => new RotationalDynamics(overflowConfig)).toThrow(RangeError);
   });
 });
