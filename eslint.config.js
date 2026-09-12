@@ -25,6 +25,7 @@ export default tseslint.config(
       "vite.e2e.config.ts",
       "playwright.config.ts",
       "tests/audio/**/*.ts",
+      "tests/engine/**/*.ts",
       "tests/e2e/**/*.spec.ts",
     ],
     extends: [...tseslint.configs.recommended],
