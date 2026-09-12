@@ -25,7 +25,7 @@ shell:
 	docker compose run --build --rm tools sh
 
 dev:
-	docker compose up --build dev
+	$(DOCKER_COMPOSE) up --build --renew-anon-volumes dev
 
 down:
 	docker compose down
