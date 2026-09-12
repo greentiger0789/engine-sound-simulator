@@ -10,13 +10,18 @@ WSL の Linux ファイルシステム上で作業し、Docker Engine または 
 
 ```bash
 make check
+make test
+make e2e
 make format
 make ci
 ```
 
 `make shell` で Node.js 24 のコンテナを開けます。コンテナは `node` ユーザー（UID/GID 1000）で動作します。現在の WSL ユーザーと異なる場合、書き込みを伴うコマンドには `docker compose run --build --rm --user "$(id -u):$(id -g)" tools npm run format` を使います。依存関係はイメージ内でインストールし、実行時の匿名 volume に配置するため、ホストに `node_modules` を作りません。
 
-現段階のコンテナはドキュメント検証用です。Web サーバーと音声機能は M1 以降に追加します。
+`make dev` で Vite 開発サーバーを起動し、`http://localhost:5173` を
+ブラウザで開けます。`make build` はアプリと Nginx 配信 image を作成します。
+AudioWorklet の境界テストはまだ無音で、エンジン計算や製品 UI の音声開始・停止は
+後続チケットで追加します。
 
 ## ブランチと PR
 
@@ -30,7 +35,10 @@ make ci
 
 ## CI の範囲
 
-現時点では Docker ビルド、Prettier、Markdownlint、actionlint、Hadolint、Gitleaks（コミット履歴）を実行します。未実装のアプリに対するテストを成功扱いする設定はありません。DSP の単体テスト、TypeScript、ブラウザ検証は該当機能の追加時に CI へ組み込みます。
+現時点では Docker ビルド、Prettier、Markdownlint、actionlint、Hadolint、
+Gitleaks（コミット履歴）、ESLint、TypeScript、Vitest、Playwright による
+Chromium 検証を実行します。Playwright は開発版と Nginx 配信版の実際の
+AudioWorklet 読み込みを確認します。
 
 チケットカタログの依存関係・パス検証と、その検証スクリプトのテストも `make ci` に含みます。共有スキルと Codex 設定は許可したパスだけを Git に含め、ローカルの認証やセッション状態はコミットしません。
 

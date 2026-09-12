@@ -1,0 +1,8 @@
+services:
+  dev:
+    ports: !reset []
+
+  web:
+    build:
+      target: e2e-web
+    ports: !reset []
