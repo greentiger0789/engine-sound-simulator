@@ -35,6 +35,13 @@ type SnapshotListener = () => void;
 const FADE_SECONDS = 0.03;
 const REFERENCE_GAIN = 0.15;
 
+interface FadeState {
+  readonly from: number;
+  readonly to: number;
+  readonly startTime: number;
+  readonly endTime: number;
+}
+
 /**
  * Owns every browser AudioContext resource. UI code only observes this class;
  * it never creates nodes or directly changes context state.
@@ -47,6 +54,8 @@ export class AudioController {
   private startPromise: Promise<void> | null = null;
   private stopPromise: Promise<void> | null = null;
   private teardownPromise: Promise<void> | null = null;
+  private fadeState: FadeState | null = null;
+  private processorReady = false;
   private stopRequested = false;
   private disposed = false;
   private readonly listeners = new Set<SnapshotListener>();
@@ -152,13 +161,10 @@ export class AudioController {
       ) {
         await this.context.resume();
         if (this.stopRequested || this.disposed) return;
-        this.fadeGain.gain.cancelScheduledValues(this.context.currentTime);
-        this.fadeGain.gain.setValueAtTime(0, this.context.currentTime);
-        this.fadeGain.gain.linearRampToValueAtTime(
-          1,
-          this.context.currentTime + FADE_SECONDS,
-        );
-        this.setSnapshot({ status: "running", error: null });
+        this.scheduleFade(this.fadeGain, this.context.currentTime, 0, 1);
+        if (this.processorReady) {
+          this.setSnapshot({ status: "running", error: null });
+        }
         return;
       }
       // An error can originate asynchronously from the processor. Never let a
@@ -195,8 +201,9 @@ export class AudioController {
       this.node = node;
       this.fadeGain = fadeGain;
       this.volumeGain = volumeGain;
+      this.processorReady = false;
       node.onprocessorerror = () => this.handleProcessorError();
-      node.port.onmessage = this.handleProcessorMessage;
+      node.port.onmessage = (event) => this.handleProcessorMessage(node, event);
       node.parameters
         .get("gain")
         ?.setValueAtTime(REFERENCE_GAIN, context.currentTime);
@@ -209,11 +216,7 @@ export class AudioController {
         await this.teardown();
         return;
       }
-      fadeGain.gain.linearRampToValueAtTime(
-        1,
-        context.currentTime + FADE_SECONDS,
-      );
-      this.setSnapshot({ status: "running", error: null });
+      this.scheduleFade(fadeGain, context.currentTime, 0, 1);
     } catch (error: unknown) {
       this.fail(
         "start-failed",
@@ -229,12 +232,8 @@ export class AudioController {
     const context = this.context;
     const fadeGain = this.fadeGain;
     if (context !== null && fadeGain !== null) {
-      fadeGain.gain.cancelScheduledValues(context.currentTime);
-      fadeGain.gain.setValueAtTime(fadeGain.gain.value, context.currentTime);
-      fadeGain.gain.linearRampToValueAtTime(
-        0,
-        context.currentTime + FADE_SECONDS,
-      );
+      const heldValue = this.holdFade(fadeGain, context.currentTime);
+      this.scheduleFade(fadeGain, context.currentTime, heldValue, 0);
       await new Promise<void>((resolve) =>
         setTimeout(resolve, FADE_SECONDS * 1000),
       );
@@ -254,9 +253,16 @@ export class AudioController {
   }
 
   private handleProcessorMessage = (
+    source: AudioWorkletNode,
     event: MessageEvent<ProcessorToControllerMessage>,
   ): void => {
-    if (event.data.type === "fatal-error") {
+    if (source !== this.node || this.disposed || this.stopRequested) return;
+    if (event.data.type === "ready") {
+      this.processorReady = true;
+      if (this.snapshot.status === "starting") {
+        this.setSnapshot({ status: "running", error: null });
+      }
+    } else if (event.data.type === "fatal-error") {
       this.fail("fatal-error", event.data.message, false);
       void this.teardown();
     }
@@ -315,6 +321,8 @@ export class AudioController {
     this.node = null;
     this.fadeGain = null;
     this.volumeGain = null;
+    this.fadeState = null;
+    this.processorReady = false;
     if (node !== null) {
       node.onprocessorerror = null;
       node.port.onmessage = null;
@@ -337,6 +345,46 @@ export class AudioController {
   private setSnapshot(change: Partial<AudioControllerSnapshot>): void {
     this.snapshot = { ...this.snapshot, ...change };
     for (const listener of this.listeners) listener();
+  }
+
+  private scheduleFade(
+    fadeGain: GainNode,
+    startTime: number,
+    from: number,
+    to: number,
+  ): void {
+    fadeGain.gain.cancelScheduledValues(startTime);
+    fadeGain.gain.setValueAtTime(from, startTime);
+    fadeGain.gain.linearRampToValueAtTime(to, startTime + FADE_SECONDS);
+    this.fadeState = {
+      from,
+      to,
+      startTime,
+      endTime: startTime + FADE_SECONDS,
+    };
+  }
+
+  private holdFade(fadeGain: GainNode, time: number): number {
+    const gain = fadeGain.gain;
+    const holdingGain = gain as AudioParam & {
+      cancelAndHoldAtTime?: (holdTime: number) => AudioParam;
+    };
+    const value = this.fadeValueAt(time);
+    if (holdingGain.cancelAndHoldAtTime !== undefined) {
+      holdingGain.cancelAndHoldAtTime(time);
+    } else {
+      gain.cancelScheduledValues(time);
+      gain.setValueAtTime(value, time);
+    }
+    return value;
+  }
+
+  private fadeValueAt(time: number): number {
+    const fade = this.fadeState;
+    if (fade === null || time >= fade.endTime) return fade?.to ?? 0;
+    if (time <= fade.startTime) return fade.from;
+    const progress = (time - fade.startTime) / (fade.endTime - fade.startTime);
+    return fade.from + (fade.to - fade.from) * progress;
   }
 }
 

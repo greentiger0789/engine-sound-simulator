@@ -43,6 +43,7 @@ class FakePort {
 
 class FakeAudioWorkletNode {
   static instances: FakeAudioWorkletNode[] = [];
+  static automaticallyReady = true;
   readonly port = new FakePort();
   readonly parameters = new Map([["gain", new FakeAudioParam()]]);
   onprocessorerror: (() => void) | null = null;
@@ -50,6 +51,13 @@ class FakeAudioWorkletNode {
 
   constructor() {
     FakeAudioWorkletNode.instances.push(this);
+    if (FakeAudioWorkletNode.automaticallyReady) {
+      queueMicrotask(() => {
+        this.port.onmessage?.({
+          data: { type: "ready", sampleRate: 48000 },
+        } as MessageEvent);
+      });
+    }
   }
 
   connect<T>(destination: T): T {
@@ -96,6 +104,7 @@ describe("AudioController", () => {
     vi.useFakeTimers();
     FakeAudioContext.instances = [];
     FakeAudioWorkletNode.instances = [];
+    FakeAudioWorkletNode.automaticallyReady = true;
     FakeAudioContext.loadWorklet = async () => undefined;
     vi.stubGlobal("isSecureContext", true);
     vi.stubGlobal("location", { origin: "https://example.test" });
@@ -124,6 +133,24 @@ describe("AudioController", () => {
     expect(context.gains[0].gain.calls).toContainEqual(["ramp", 0, 10.03]);
     expect(context.close).toHaveBeenCalledOnce();
     expect(controller.getSnapshot().status).toBe("idle");
+  });
+
+  it("holds the instantaneous start envelope when stopped mid-fade", async () => {
+    const controller = new AudioController();
+    await controller.start();
+    const context = FakeAudioContext.instances[0];
+    context.currentTime = 10.015;
+
+    const stopping = controller.stop();
+    await vi.advanceTimersByTimeAsync(30);
+    await stopping;
+    const calls = context.gains[0].gain.calls;
+    const heldValue = calls.find(
+      ([type, _value, time]) => type === "set" && time === 10.015,
+    )?.[1];
+    expect(heldValue).toBeCloseTo(0.5);
+    expect(calls).toContainEqual(["ramp", 0, 10.045]);
+    expect(calls).not.toContainEqual(["set", 1, 10.015]);
   });
 
   it("is idempotent and reflects volume and mute through its gain node", async () => {
@@ -237,5 +264,22 @@ describe("AudioController", () => {
     expect(controller.getSnapshot().status).toBe("idle");
     expect(FakeAudioWorkletNode.instances).toHaveLength(0);
     expect(FakeAudioContext.instances[0].close).toHaveBeenCalledOnce();
+  });
+
+  it("only enters running after its active processor reports ready", async () => {
+    FakeAudioWorkletNode.automaticallyReady = false;
+    const controller = new AudioController();
+    await controller.start();
+    expect(controller.getSnapshot().status).toBe("starting");
+
+    const lateReady = FakeAudioWorkletNode.instances[0].port.onmessage!;
+    lateReady({ data: { type: "ready", sampleRate: 48000 } } as MessageEvent);
+    expect(controller.getSnapshot().status).toBe("running");
+
+    const stopping = controller.stop();
+    await vi.advanceTimersByTimeAsync(30);
+    await stopping;
+    lateReady({ data: { type: "ready", sampleRate: 48000 } } as MessageEvent);
+    expect(controller.getSnapshot().status).toBe("idle");
   });
 });
