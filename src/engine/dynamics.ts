@@ -1,0 +1,280 @@
+import {
+  parseEngineConfig,
+  type EngineConfig,
+  type TorqueCurvePoint,
+} from "./config";
+
+/** The fixed simulation cadence used by the audio-frame accumulator. */
+export const DYNAMICS_HZ = 1_000;
+export const DYNAMICS_STEP_SECONDS = 1 / DYNAMICS_HZ;
+
+const TWO_PI = 2 * Math.PI;
+
+/** Converts engine speed without duplicating rpm/radian conversion factors. */
+export function rpmToRadPerSecond(rpm: number): number {
+  requireFinite("rpm", rpm);
+  const result = (rpm * TWO_PI) / 60;
+  requireFinite("converted angular velocity", result);
+  return result;
+}
+
+/** Converts angular velocity without duplicating rpm/radian conversion factors. */
+export function radPerSecondToRpm(radPerSecond: number): number {
+  requireFinite("radPerSecond", radPerSecond);
+  const result = (radPerSecond * 60) / TWO_PI;
+  requireFinite("converted rpm", result);
+  return result;
+}
+
+export interface RotationalDynamicsOptions {
+  /** Time constant of the effective intake opening. Defaults to 80 ms. */
+  readonly intakeLagSeconds?: number;
+  /** Constant resisting torque. Defaults to 1.5 N m. */
+  readonly frictionTorqueNm?: number;
+  /** Viscous resistance, in N m per rad/s. Defaults to 0.02. */
+  readonly viscousFrictionNmPerRadPerSec?: number;
+  /** Initial external load, in N m. Defaults to zero. */
+  readonly loadTorqueNm?: number;
+  /** Proportional idle-controller gain, in N m per rad/s. */
+  readonly idleGainNmPerRadPerSec?: number;
+  /** Maximum assist from the idle controller, in N m. */
+  readonly idleMaxTorqueNm?: number;
+  /** Starting speed. Defaults to the configured idle speed. */
+  readonly initialRpm?: number;
+}
+
+export interface DynamicsState {
+  readonly rpm: number;
+  readonly angularVelocityRadPerSec: number;
+  readonly effectiveThrottle: number;
+}
+
+interface ValidatedOptions {
+  readonly intakeLagSeconds: number;
+  readonly frictionTorqueNm: number;
+  readonly viscousFrictionNmPerRadPerSec: number;
+  readonly idleGainNmPerRadPerSec: number;
+  readonly idleMaxTorqueNm: number;
+}
+
+const DEFAULTS: ValidatedOptions = {
+  intakeLagSeconds: 0.08,
+  frictionTorqueNm: 1.5,
+  viscousFrictionNmPerRadPerSec: 0.02,
+  idleGainNmPerRadPerSec: 0.8,
+  idleMaxTorqueNm: 25,
+};
+
+function requireFinite(name: string, value: number): void {
+  if (!Number.isFinite(value)) {
+    throw new RangeError(`${name} must be finite`);
+  }
+}
+
+function requireNonNegative(name: string, value: number): void {
+  requireFinite(name, value);
+  if (value < 0) throw new RangeError(`${name} must not be negative`);
+}
+
+function readOption(
+  name: string,
+  value: number | undefined,
+  fallback: number,
+  positive = false,
+): number {
+  const result = value ?? fallback;
+  requireFinite(name, result);
+  if (positive ? result <= 0 : result < 0) {
+    throw new RangeError(
+      `${name} must be ${positive ? "greater than zero" : "non-negative"}`,
+    );
+  }
+  return result;
+}
+
+/** Linearly interpolates a validated torque curve, clamped at its endpoints. */
+export function interpolateTorqueCurve(
+  torqueCurve: readonly TorqueCurvePoint[],
+  rpm: number,
+): number {
+  requireNonNegative("rpm", rpm);
+  if (torqueCurve.length < 2) {
+    throw new RangeError("torqueCurve must contain at least two points");
+  }
+  let previousRpm = -1;
+  for (const point of torqueCurve) {
+    requireNonNegative("torqueCurve.rpm", point.rpm);
+    requireFinite("torqueCurve.torqueNm", point.torqueNm);
+    if (point.rpm <= previousRpm) {
+      throw new RangeError(
+        "torqueCurve rpm values must be strictly increasing",
+      );
+    }
+    previousRpm = point.rpm;
+  }
+  const first = torqueCurve[0];
+  const last = torqueCurve[torqueCurve.length - 1];
+  if (!first || !last) throw new RangeError("torqueCurve must not be empty");
+  if (rpm <= first.rpm) return first.torqueNm;
+  if (rpm >= last.rpm) return last.torqueNm;
+
+  for (let index = 1; index < torqueCurve.length; index += 1) {
+    const upper = torqueCurve[index];
+    const lower = torqueCurve[index - 1];
+    if (!upper || !lower) continue;
+    if (rpm <= upper.rpm) {
+      const proportion = (rpm - lower.rpm) / (upper.rpm - lower.rpm);
+      return lower.torqueNm + proportion * (upper.torqueNm - lower.torqueNm);
+    }
+  }
+  return last.torqueNm;
+}
+
+/**
+ * A fixed-1 kHz rotational model.  It deliberately has no sample phase or
+ * audio dependency: callers advance it with the actual rendered frame count.
+ */
+export class RotationalDynamics {
+  private readonly config: EngineConfig;
+  private readonly options: ValidatedOptions;
+  private angularVelocity: number;
+  private effectiveThrottleValue = 0;
+  private requestedThrottle = 0;
+  private loadTorque: number;
+  private accumulatorSeconds = 0;
+
+  public constructor(
+    config: EngineConfig,
+    options: RotationalDynamicsOptions = {},
+  ) {
+    const parsed = parseEngineConfig(config);
+    if (!parsed.ok) {
+      throw new RangeError("config is not a valid EngineConfig");
+    }
+    this.config = parsed.value;
+    this.options = {
+      intakeLagSeconds: readOption(
+        "intakeLagSeconds",
+        options.intakeLagSeconds,
+        DEFAULTS.intakeLagSeconds,
+        true,
+      ),
+      frictionTorqueNm: readOption(
+        "frictionTorqueNm",
+        options.frictionTorqueNm,
+        DEFAULTS.frictionTorqueNm,
+      ),
+      viscousFrictionNmPerRadPerSec: readOption(
+        "viscousFrictionNmPerRadPerSec",
+        options.viscousFrictionNmPerRadPerSec,
+        DEFAULTS.viscousFrictionNmPerRadPerSec,
+      ),
+      idleGainNmPerRadPerSec: readOption(
+        "idleGainNmPerRadPerSec",
+        options.idleGainNmPerRadPerSec,
+        DEFAULTS.idleGainNmPerRadPerSec,
+      ),
+      idleMaxTorqueNm: readOption(
+        "idleMaxTorqueNm",
+        options.idleMaxTorqueNm,
+        DEFAULTS.idleMaxTorqueNm,
+      ),
+    };
+    const initialRpm = options.initialRpm ?? this.config.idleRpm;
+    requireNonNegative("initialRpm", initialRpm);
+    this.angularVelocity = rpmToRadPerSecond(initialRpm);
+    this.loadTorque = readOption("loadTorqueNm", options.loadTorqueNm, 0);
+  }
+
+  public setThrottle(throttle: number): void {
+    requireFinite("throttle", throttle);
+    if (throttle < 0 || throttle > 1) {
+      throw new RangeError("throttle must be in [0, 1]");
+    }
+    this.requestedThrottle = throttle;
+  }
+
+  public setLoadTorque(loadTorqueNm: number): void {
+    requireNonNegative("loadTorqueNm", loadTorqueNm);
+    this.loadTorque = loadTorqueNm;
+  }
+
+  /** Advances using the real audio frame count and sample rate. */
+  public advanceFrames(frameCount: number, sampleRate: number): DynamicsState {
+    if (!Number.isSafeInteger(frameCount) || frameCount < 0) {
+      throw new RangeError("frameCount must be a non-negative safe integer");
+    }
+    requireFinite("sampleRate", sampleRate);
+    if (sampleRate <= 0)
+      throw new RangeError("sampleRate must be greater than zero");
+
+    const elapsedSeconds = frameCount / sampleRate;
+    requireFinite("elapsedSeconds", elapsedSeconds);
+    const nextAccumulatorSeconds = this.accumulatorSeconds + elapsedSeconds;
+    requireFinite("accumulated elapsedSeconds", nextAccumulatorSeconds);
+    this.accumulatorSeconds = nextAccumulatorSeconds;
+    // The epsilon only absorbs floating-point representation error at an exact
+    // millisecond boundary; it cannot create an extra simulation step.
+    while (this.accumulatorSeconds + 1e-12 >= DYNAMICS_STEP_SECONDS) {
+      this.accumulatorSeconds -= DYNAMICS_STEP_SECONDS;
+      if (this.accumulatorSeconds < 0) this.accumulatorSeconds = 0;
+      this.integrateFixedStep();
+    }
+    return this.getState();
+  }
+
+  /** Applies one fixed 1 ms model step; useful for deterministic offline tests. */
+  public advanceFixedStep(): DynamicsState {
+    this.integrateFixedStep();
+    return this.getState();
+  }
+
+  private integrateFixedStep(): void {
+    const lagCoefficient =
+      1 - Math.exp(-DYNAMICS_STEP_SECONDS / this.options.intakeLagSeconds);
+    this.effectiveThrottleValue +=
+      (this.requestedThrottle - this.effectiveThrottleValue) * lagCoefficient;
+
+    const rpm = radPerSecondToRpm(this.angularVelocity);
+    const driveTorque =
+      this.effectiveThrottleValue *
+      interpolateTorqueCurve(this.config.torqueCurve, rpm);
+    const idleError = Math.max(
+      0,
+      rpmToRadPerSecond(this.config.idleRpm) - this.angularVelocity,
+    );
+    const idleTorque = Math.min(
+      this.options.idleMaxTorqueNm,
+      idleError * this.options.idleGainNmPerRadPerSec,
+    );
+    const frictionTorque =
+      this.options.frictionTorqueNm +
+      this.options.viscousFrictionNmPerRadPerSec * this.angularVelocity;
+    const acceleration =
+      (driveTorque + idleTorque - frictionTorque - this.loadTorque) /
+      this.config.inertiaKgM2;
+    const nextAngularVelocity =
+      this.angularVelocity + acceleration * DYNAMICS_STEP_SECONDS;
+    this.angularVelocity = Number.isFinite(nextAngularVelocity)
+      ? Math.max(0, nextAngularVelocity)
+      : 0;
+  }
+
+  public getState(): DynamicsState {
+    const angularVelocityRadPerSec = Number.isFinite(this.angularVelocity)
+      ? Math.max(0, this.angularVelocity)
+      : 0;
+    return {
+      angularVelocityRadPerSec,
+      rpm: radPerSecondToRpm(angularVelocityRadPerSec),
+      effectiveThrottle: this.effectiveThrottleValue,
+    };
+  }
+}
+
+export function createRotationalDynamics(
+  config: EngineConfig,
+  options?: RotationalDynamicsOptions,
+): RotationalDynamics {
+  return new RotationalDynamics(config, options);
+}
