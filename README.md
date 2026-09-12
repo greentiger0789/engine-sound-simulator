@@ -4,7 +4,7 @@
 
 まず4ストロークのバイクから始め、将来は自動車へ拡張します。
 
-**現在は設計・開発基盤の整備段階です。Web UI と音声シミュレーター本体はまだ実装していません。**
+**現在は起動基盤の実装段階です。Web UI の土台と AudioWorklet の境界を実装済みで、エンジン計算と持続音はまだ実装していません。**
 
 ## 実装計画
 
@@ -22,11 +22,15 @@ Docker Engine または Docker Desktop の WSL integration と、Docker Compose 
 ```bash
 make check   # コンテナのビルド、整形・Markdown の検証
 make format  # コンテナ内で整形
+make test    # AudioWorklet 境界の単体テスト
+make e2e     # Chromium で開発版・本番版の Worklet 読み込みを検証
 make ci      # workflow / Dockerfile / 秘密情報検査を含む全チェック
 make shell   # 開発ツールのコンテナに入る
 ```
 
-コンテナは非 root で実行し、依存関係はコンテナ側の volume に保持します。音声実装後も、音を計算・出力するのは Windows 側のブラウザです。
+開発ツールのコンテナは非 root で実行し、依存関係はコンテナ側の
+volume に保持します。E2E は Playwright 公式コンテナ内の Chromium で
+実行します。製品利用時に音を計算・出力するのは Windows 側のブラウザです。
 
 ## 開発と運用
 

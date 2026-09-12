@@ -20,10 +20,22 @@ export default tseslint.config(
     },
   },
   {
-    files: ["vite.config.ts"],
+    files: [
+      "vite.config.ts",
+      "playwright.config.ts",
+      "tests/audio/**/*.ts",
+      "tests/e2e/**/*.spec.ts",
+    ],
     extends: [...tseslint.configs.recommended],
     languageOptions: {
       globals: globals.node,
+    },
+  },
+  {
+    files: ["tests/e2e/**/*-harness.ts"],
+    extends: [...tseslint.configs.recommended],
+    languageOptions: {
+      globals: globals.browser,
     },
   },
 );

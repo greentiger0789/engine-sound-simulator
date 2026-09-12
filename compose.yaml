@@ -17,6 +17,22 @@ services:
     init: true
     ports:
       - "127.0.0.1:5173:5173"
+    networks:
+      default:
+        aliases:
+          - vite-app
+          - dev.localhost
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:5173').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 30
     volumes:
       - .:/workspace
       - /workspace/node_modules
@@ -32,3 +48,23 @@ services:
       target: web
     ports:
       - "127.0.0.1:8080:8080"
+    networks:
+      default:
+        aliases:
+          - web-app
+          - web.localhost
+
+  e2e:
+    build:
+      context: .
+      target: e2e
+    depends_on:
+      dev:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    environment:
+      E2E_DEV_BASE_URL: http://dev.localhost:5173
+      E2E_WEB_BASE_URL: http://web.localhost:8080
+    init: true
+    ipc: host
