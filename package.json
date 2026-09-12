@@ -15,7 +15,7 @@
     "dev": "vite",
     "e2e": "playwright test",
     "lint": "eslint .",
-    "test": "vitest run tests/audio",
+    "test": "vitest run tests/audio tests/engine",
     "test:tooling": "node --test scripts/tickets.test.mjs",
     "format": "prettier --write .",
     "typecheck": "tsc --build"
