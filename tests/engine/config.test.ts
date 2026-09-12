@@ -20,6 +20,9 @@ describe("parseEngineConfig", () => {
   it("parses the single-cylinder model preset", () => {
     const result = parseEngineConfig(singleCylinderPreset.config);
     expect(result).toEqual({ ok: true, value: singleCylinderPreset.config });
+    expect(singleCylinderPreset.config.cycleDegrees).toBe(720);
+    expect(singleCylinderPreset.config.cylinders).toHaveLength(1);
+    expect(singleCylinderPreset.config.cylinders[0]?.firingAngleDeg).toBe(0);
     expect(singleCylinderPreset.metadata.valueSource).toBe("model-values");
     expect(singleCylinderPreset.metadata.description).toMatch(/not measured/i);
   });
