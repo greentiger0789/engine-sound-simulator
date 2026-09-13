@@ -15,8 +15,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  repository-checks:
-    name: Repository checks
+  application:
+    name: Application checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check formatting, documentation, tooling, lint, and types
+        run: make check
+      - name: Run unit tests
+        run: make test
+      - name: Build application and web image
+        run: make build
+
+  e2e:
+    name: Browser end-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run Chromium tests against development and web images
+        run: make e2e
+
+  security:
+    name: Container, workflow, and secret checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,5 +50,22 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Check documentation, containers, workflows, and secrets
-        run: make ci
+      - name: Check workflows, Dockerfile, and committed history
+        run: make lint-actions lint-docker secrets
+
+  repository-checks:
+    name: Repository checks
+    if: ${{ always() }}
+    needs: [application, e2e, security]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to succeed
+        env:
+          APPLICATION_RESULT: ${{ needs.application.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+        run: |
+          test "$APPLICATION_RESULT" = success
+          test "$E2E_RESULT" = success
+          test "$SECURITY_RESULT" = success
