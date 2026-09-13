@@ -192,11 +192,17 @@ test("runs the product audio controls without creating audio before the user sta
   await page.getByRole("button", { name: "Start audio" }).click();
   await expect(page.getByTestId("audio-status")).toHaveText("running");
   await expect
+    .poll(() => page.getByTestId("engine-rpm").textContent())
+    .not.toBe("0");
+  await expect
     .poll(() => audioGraphCount(page, "__e2eAudioWorkletNodeCount"))
     .toBe(1);
 
   await page.getByLabel("Volume").fill("0.35");
   await expect(page.getByLabel("Volume")).toHaveValue("0.35");
+  await page.getByLabel("Throttle").fill("0.5");
+  await expect(page.getByLabel("Throttle")).toHaveValue("0.5");
+  await expect(page.getByTestId("effective-throttle")).toContainText("%");
   await page.getByLabel("Mute audio").check();
   await expect(page.getByLabel("Mute audio")).toBeChecked();
 

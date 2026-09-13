@@ -137,6 +137,11 @@ export class SingleCylinderPulseDsp {
     return this.fault;
   }
 
+  /** Scalar fault probe for the Worklet path; unlike getFaultState it allocates nothing. */
+  public isFaulted(): boolean {
+    return this.fault.faulted;
+  }
+
   public getPulseState(): PulseState {
     return {
       activePulseCount: this.activePulseCount,
@@ -192,6 +197,74 @@ export class SingleCylinderPulseDsp {
       this.previousDcOutput = dc;
       // This smooth saturator is a final absolute peak guarantee, not a gain
       // substitute: |x / (1 + |x|)| is always strictly below one.
+      const protectedSample =
+        (dc * this.outputGain) / (1 + Math.abs(dc * this.outputGain));
+      if (!finite(raw) || !finite(dc) || !finite(protectedSample)) {
+        this.trip(output, "non-finite signal");
+        return;
+      }
+      output[frame] = muted ? 0 : protectedSample;
+    }
+  }
+
+  /**
+   * Allocation-free Worklet rendering with caller-owned event/load storage.
+   * The object-based `process()` method remains the checked public/offline API.
+   */
+  public processRealtime(
+    output: Float32Array,
+    frameCount: number,
+    eventSampleIndices: Int32Array,
+    eventSampleOffsets: Float64Array,
+    eventCount: number,
+    load: Float64Array,
+    muted = false,
+  ): void {
+    if (this.fault.faulted) {
+      output.fill(0, 0, frameCount);
+      return;
+    }
+    if (
+      !Number.isSafeInteger(frameCount) ||
+      frameCount < 0 ||
+      frameCount > output.length ||
+      frameCount > load.length ||
+      !Number.isSafeInteger(eventCount) ||
+      eventCount < 0 ||
+      eventCount > this.maxEventsPerBlock ||
+      eventCount > eventSampleIndices.length ||
+      eventCount > eventSampleOffsets.length
+    ) {
+      this.trip(output, "invalid realtime DSP input");
+      return;
+    }
+    let eventCursor = 0;
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const frameLoad = load[frame]!;
+      if (!finite(frameLoad) || frameLoad < 0 || frameLoad > 1) {
+        this.trip(output, "load must be in [0, 1]");
+        return;
+      }
+      while (
+        eventCursor < eventCount &&
+        eventSampleIndices[eventCursor] === frame
+      ) {
+        const offset = eventSampleOffsets[eventCursor]!;
+        if (!finite(offset) || offset < 0 || offset >= 1) {
+          this.trip(output, "invalid firing event");
+          return;
+        }
+        if (!this.startPulse(offset, frameLoad)) {
+          this.trip(output, "active pulse limit exceeded");
+          return;
+        }
+        eventCursor += 1;
+      }
+      const raw = this.sumAndAdvancePulses();
+      const dc =
+        raw - this.previousInput + this.dcCoefficient * this.previousDcOutput;
+      this.previousInput = raw;
+      this.previousDcOutput = dc;
       const protectedSample =
         (dc * this.outputGain) / (1 + Math.abs(dc * this.outputGain));
       if (!finite(raw) || !finite(dc) || !finite(protectedSample)) {

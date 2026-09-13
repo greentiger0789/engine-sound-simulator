@@ -45,16 +45,28 @@ class FakeAudioWorkletNode {
   static instances: FakeAudioWorkletNode[] = [];
   static automaticallyReady = true;
   readonly port = new FakePort();
-  readonly parameters = new Map([["gain", new FakeAudioParam()]]);
+  readonly parameters = new Map([
+    ["gain", new FakeAudioParam()],
+    ["throttle", new FakeAudioParam()],
+  ]);
   onprocessorerror: (() => void) | null = null;
   disconnected = false;
 
-  constructor() {
+  constructor(
+    _context?: AudioContext,
+    _name?: string,
+    options?: AudioWorkletNodeOptions,
+  ) {
     FakeAudioWorkletNode.instances.push(this);
     if (FakeAudioWorkletNode.automaticallyReady) {
       queueMicrotask(() => {
+        const requestId = (options?.processorOptions as { requestId?: string })
+          ?.requestId;
         this.port.onmessage?.({
-          data: { type: "ready", sampleRate: 48000 },
+          data: { type: "config-applied", requestId },
+        } as MessageEvent);
+        this.port.onmessage?.({
+          data: { type: "ready", requestId, sampleRate: 48000 },
         } as MessageEvent);
       });
     }
@@ -166,6 +178,18 @@ describe("AudioController", () => {
     expect(context.gains[1].gain.calls).toContainEqual(["set", 0, 10]);
     controller.setMuted(false);
     expect(context.gains[1].gain.calls).toContainEqual(["set", 1, 10]);
+  });
+
+  it("sends throttle through its a-rate AudioParam", async () => {
+    const controller = new AudioController();
+    controller.setThrottle(2);
+    await controller.start();
+    const throttle =
+      FakeAudioWorkletNode.instances[0].parameters.get("throttle")!;
+    expect(throttle.calls).toContainEqual(["set", 1, 10]);
+
+    controller.setThrottle(0.35);
+    expect(throttle.calls).toContainEqual(["set", 0.35, 10]);
   });
 
   it("maps unavailable audio and processor errors to displayable snapshots", async () => {
@@ -313,13 +337,65 @@ describe("AudioController", () => {
     expect(FakeAudioWorkletNode.instances).toHaveLength(1);
     expect(controller.getSnapshot().status).toBe("starting");
 
-    lateReady({ data: { type: "ready", sampleRate: 48000 } } as MessageEvent);
+    lateReady({
+      data: { type: "config-applied", requestId: "1" },
+    } as MessageEvent);
+    lateReady({
+      data: { type: "ready", requestId: "1", sampleRate: 48000 },
+    } as MessageEvent);
     expect(controller.getSnapshot().status).toBe("running");
 
     const stopping = controller.stop();
     await vi.advanceTimersByTimeAsync(30);
     await stopping;
-    lateReady({ data: { type: "ready", sampleRate: 48000 } } as MessageEvent);
+    lateReady({
+      data: { type: "ready", requestId: "1", sampleRate: 48000 },
+    } as MessageEvent);
     expect(controller.getSnapshot().status).toBe("idle");
+  });
+
+  it("requires config-applied before matching ready and ignores stale request ids", async () => {
+    FakeAudioWorkletNode.automaticallyReady = false;
+    const controller = new AudioController();
+    await controller.start();
+    const message = FakeAudioWorkletNode.instances[0].port.onmessage!;
+
+    message({
+      data: { type: "ready", requestId: "1", sampleRate: 48000 },
+    } as MessageEvent);
+    message({
+      data: { type: "config-applied", requestId: "99" },
+    } as MessageEvent);
+    message({
+      data: { type: "ready", requestId: "99", sampleRate: 48000 },
+    } as MessageEvent);
+    expect(controller.getSnapshot().status).toBe("starting");
+
+    message({
+      data: { type: "config-applied", requestId: "1" },
+    } as MessageEvent);
+    message({
+      data: { type: "ready", requestId: "1", sampleRate: 48000 },
+    } as MessageEvent);
+    expect(controller.getSnapshot().status).toBe("running");
+  });
+
+  it("tears down a rejected configuration and retains it for a retry", async () => {
+    FakeAudioWorkletNode.automaticallyReady = false;
+    const controller = new AudioController();
+    await controller.start();
+    FakeAudioWorkletNode.instances[0].port.onmessage?.({
+      data: { type: "config-rejected", requestId: "1", message: "bad config" },
+    } as MessageEvent);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: { code: "config-rejected", recoverable: true },
+    });
+    await Promise.resolve();
+
+    FakeAudioWorkletNode.automaticallyReady = true;
+    await controller.start();
+    expect(FakeAudioWorkletNode.instances).toHaveLength(2);
+    expect(controller.getSnapshot().status).toBe("running");
   });
 });

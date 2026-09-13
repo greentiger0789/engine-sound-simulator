@@ -1,6 +1,7 @@
 import { loadEngineAudioWorklet } from "../../src/audio/load-worklet";
 import { resolveEngineAudioWorkletModuleUrl } from "../../src/audio/worklet-module-url";
 import { ENGINE_AUDIO_PROCESSOR_NAME } from "../../src/audio/worklets/contracts";
+import { singleCylinderEngineConfig } from "../../src/presets/single-cylinder";
 
 const startButton = document.querySelector<HTMLButtonElement>(
   '[data-testid="start-worklet"]',
@@ -43,9 +44,18 @@ startButton.addEventListener("click", async () => {
     return;
   }
 
-  const node = new AudioWorkletNode(context, ENGINE_AUDIO_PROCESSOR_NAME);
+  const requestId = "harness-1";
+  const node = new AudioWorkletNode(context, ENGINE_AUDIO_PROCESSOR_NAME, {
+    processorOptions: {
+      requestId,
+      config: { version: 1, snapshot: singleCylinderEngineConfig },
+    },
+  });
+  let configApplied = false;
   node.port.onmessage = (event: MessageEvent<{ type?: string }>) => {
-    if (event.data.type === "ready") {
+    if (event.data.type === "config-applied") {
+      configApplied = true;
+    } else if (event.data.type === "ready" && configApplied) {
       status.value = "ready";
     }
   };

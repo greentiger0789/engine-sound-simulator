@@ -7,8 +7,11 @@ import {
 import { resolveEngineAudioWorkletModuleUrl } from "./worklet-module-url";
 import {
   ENGINE_AUDIO_PROCESSOR_NAME,
+  type EngineAudioConfig,
   type ProcessorToControllerMessage,
 } from "./worklets/contracts";
+import { parseEngineConfig, type EngineConfig } from "../engine/config";
+import { singleCylinderEngineConfig } from "../presets/single-cylinder";
 
 export type AudioControllerStatus = AudioLifecycleStatus;
 
@@ -18,6 +21,7 @@ export type AudioControllerErrorCode =
   | "worklet-load-failed"
   | "processor-error"
   | "fatal-error"
+  | "config-rejected"
   | "context-state-change"
   | "start-failed";
 
@@ -32,12 +36,35 @@ export interface AudioControllerSnapshot {
   readonly volume: number;
   readonly muted: boolean;
   readonly error: AudioControllerError | null;
+  readonly throttle: number;
+  readonly telemetry: AudioTelemetry;
+}
+
+export interface AudioTelemetry {
+  readonly rpm: number;
+  readonly effectiveThrottle: number;
+  readonly limiterActive: boolean;
 }
 
 type SnapshotListener = () => void;
 
 const FADE_SECONDS = 0.03;
 const REFERENCE_GAIN = 0.15;
+const INITIAL_TELEMETRY: AudioTelemetry = {
+  rpm: 0,
+  effectiveThrottle: 0,
+  limiterActive: false,
+};
+
+function validatedSingleCylinderConfig(): EngineConfig {
+  const parsed = parseEngineConfig(singleCylinderEngineConfig, {
+    maxCylinders: 1,
+  });
+  if (!parsed.ok || parsed.value.cylinders.length !== 1) {
+    throw new Error("The single-cylinder engine configuration is invalid.");
+  }
+  return parsed.value;
+}
 
 interface FadeState {
   readonly from: number;
@@ -60,6 +87,10 @@ export class AudioController {
   private teardownPromise: Promise<void> | null = null;
   private fadeState: FadeState | null = null;
   private processorReady = false;
+  private configApplied = false;
+  private requestId = 0;
+  private activeRequestId: string | null = null;
+  private readonly lastValidConfig = validatedSingleCylinderConfig();
   private stopRequested = false;
   private disposed = false;
   private readonly listeners = new Set<SnapshotListener>();
@@ -68,6 +99,8 @@ export class AudioController {
     volume: 1,
     muted: false,
     error: null,
+    throttle: 0,
+    telemetry: INITIAL_TELEMETRY,
   };
 
   getSnapshot(): AudioControllerSnapshot {
@@ -138,6 +171,17 @@ export class AudioController {
   setMuted(muted: boolean): void {
     this.setSnapshot({ muted: Boolean(muted) });
     this.applyVolume();
+  }
+
+  setThrottle(throttle: number): void {
+    const normalized = Number.isFinite(throttle)
+      ? Math.min(1, Math.max(0, throttle))
+      : 0;
+    this.setSnapshot({ throttle: normalized });
+    const parameter = this.node?.parameters.get("throttle");
+    if (parameter !== undefined && this.context !== null) {
+      parameter.setValueAtTime(normalized, this.context.currentTime);
+    }
   }
 
   async dispose(): Promise<void> {
@@ -220,18 +264,30 @@ export class AudioController {
         return;
       }
 
-      const node = new AudioWorkletNode(context, ENGINE_AUDIO_PROCESSOR_NAME);
+      const requestId = String(++this.requestId);
+      const config: EngineAudioConfig = {
+        version: 1,
+        snapshot: this.lastValidConfig,
+      };
+      const node = new AudioWorkletNode(context, ENGINE_AUDIO_PROCESSOR_NAME, {
+        processorOptions: { requestId, config },
+      });
       const fadeGain = context.createGain();
       const volumeGain = context.createGain();
       this.node = node;
       this.fadeGain = fadeGain;
       this.volumeGain = volumeGain;
       this.processorReady = false;
+      this.configApplied = false;
+      this.activeRequestId = requestId;
       node.onprocessorerror = () => this.handleProcessorError();
       node.port.onmessage = (event) => this.handleProcessorMessage(node, event);
       node.parameters
         .get("gain")
         ?.setValueAtTime(REFERENCE_GAIN, context.currentTime);
+      node.parameters
+        .get("throttle")
+        ?.setValueAtTime(this.snapshot.throttle, context.currentTime);
       fadeGain.gain.setValueAtTime(0, context.currentTime);
       this.applyVolume();
       node.connect(fadeGain).connect(volumeGain).connect(context.destination);
@@ -241,7 +297,7 @@ export class AudioController {
         await this.teardown();
         return;
       }
-      this.scheduleFade(fadeGain, context.currentTime, 0, 1);
+      // Remain silent until this exact initialization request is acknowledged.
     } catch (error: unknown) {
       this.fail(
         "start-failed",
@@ -292,19 +348,61 @@ export class AudioController {
     event: MessageEvent<ProcessorToControllerMessage>,
   ): void => {
     if (source !== this.node || this.disposed || this.stopRequested) return;
-    if (event.data.type === "ready") {
+    const message = event.data;
+    if (
+      (message.type === "config-applied" ||
+        message.type === "config-rejected" ||
+        message.type === "ready") &&
+      message.requestId !== this.activeRequestId
+    ) {
+      return;
+    }
+    if (message.type === "config-applied") {
+      this.configApplied = true;
+    } else if (message.type === "ready") {
+      // A ready response alone is not evidence that the requested config was
+      // accepted. In particular, ignore a reversed or stale handshake.
+      if (!this.configApplied) return;
       this.processorReady = true;
-      if (this.snapshot.status === "starting") {
+      if (
+        this.snapshot.status === "starting" &&
+        this.context &&
+        this.fadeGain
+      ) {
         const transition = transitionAudioLifecycle(
           this.snapshot.status,
           "processor-ready",
         );
         if (transition.accepted) {
           this.setSnapshot({ status: transition.status, error: null });
+          this.scheduleFade(this.fadeGain, this.context.currentTime, 0, 1);
         }
       }
-    } else if (event.data.type === "fatal-error") {
-      this.fail("fatal-error", event.data.message, false);
+    } else if (message.type === "config-rejected") {
+      this.fail("config-rejected", message.message, true);
+      void this.teardown();
+    } else if (message.type === "telemetry") {
+      if (
+        Number.isFinite(message.rpm) &&
+        Number.isFinite(message.effectiveThrottle)
+      ) {
+        this.setSnapshot({
+          telemetry: {
+            rpm: message.rpm,
+            effectiveThrottle: message.effectiveThrottle,
+            limiterActive: message.limiterActive,
+          },
+        });
+      } else {
+        this.fail(
+          "fatal-error",
+          "The audio processor reported invalid telemetry.",
+          false,
+        );
+        void this.teardown();
+      }
+    } else if (message.type === "fatal-error") {
+      this.fail("fatal-error", message.message, false);
       void this.teardown();
     }
   };
@@ -364,6 +462,8 @@ export class AudioController {
     this.volumeGain = null;
     this.fadeState = null;
     this.processorReady = false;
+    this.configApplied = false;
+    this.activeRequestId = null;
     if (node !== null) {
       node.onprocessorerror = null;
       node.port.onmessage = null;

@@ -49,6 +49,8 @@ export interface DynamicsState {
   readonly rpm: number;
   readonly angularVelocityRadPerSec: number;
   readonly effectiveThrottle: number;
+  /** The bounded multiplier currently applied to combustion drive torque. */
+  readonly driveTorqueMultiplier: number;
 }
 
 interface ValidatedOptions {
@@ -147,6 +149,7 @@ export class RotationalDynamics {
   private effectiveThrottleValue = 0;
   private requestedThrottle = 0;
   private loadTorque: number;
+  private driveTorqueMultiplier = 1;
   private accumulatorSeconds = 0;
 
   public constructor(
@@ -206,6 +209,19 @@ export class RotationalDynamics {
     this.loadTorque = loadTorqueNm;
   }
 
+  /**
+   * Gates only combustion drive torque. This deliberately does not gate the
+   * idle controller: a limiter cut must retain idle assist so its hysteretic
+   * restart threshold can be reached without abusing the lagged throttle.
+   */
+  public setDriveTorqueMultiplier(multiplier: number): void {
+    requireFinite("driveTorqueMultiplier", multiplier);
+    if (multiplier < 0 || multiplier > 1) {
+      throw new RangeError("driveTorqueMultiplier must be in [0, 1]");
+    }
+    this.driveTorqueMultiplier = multiplier;
+  }
+
   /** Advances using the real audio frame count and sample rate. */
   public advanceFrames(frameCount: number, sampleRate: number): DynamicsState {
     if (!Number.isSafeInteger(frameCount) || frameCount < 0) {
@@ -241,6 +257,41 @@ export class RotationalDynamics {
     return this.getState();
   }
 
+  /** Allocation-free one-frame advance for the validated AudioWorklet path. */
+  public advanceRealtimeFrame(sampleRate: number): void {
+    requireFinite("sampleRate", sampleRate);
+    if (sampleRate <= 0) {
+      throw new RangeError("sampleRate must be greater than zero");
+    }
+    const elapsedSeconds = 1 / sampleRate;
+    requireFinite("elapsedSeconds", elapsedSeconds);
+    if (elapsedSeconds > MAX_FRAME_ADVANCE_SECONDS) {
+      throw new RangeError(
+        `elapsedSeconds must not exceed ${MAX_FRAME_ADVANCE_SECONDS}`,
+      );
+    }
+    const nextAccumulatorSeconds = this.accumulatorSeconds + elapsedSeconds;
+    requireFinite("accumulated elapsedSeconds", nextAccumulatorSeconds);
+    this.accumulatorSeconds = nextAccumulatorSeconds;
+    while (this.accumulatorSeconds + 1e-12 >= DYNAMICS_STEP_SECONDS) {
+      this.accumulatorSeconds -= DYNAMICS_STEP_SECONDS;
+      if (this.accumulatorSeconds < 0) this.accumulatorSeconds = 0;
+      this.integrateFixedStep();
+    }
+  }
+
+  public getAngularVelocityRadPerSec(): number {
+    return this.angularVelocity;
+  }
+
+  public getRpm(): number {
+    return radPerSecondToRpm(this.angularVelocity);
+  }
+
+  public getEffectiveThrottle(): number {
+    return this.effectiveThrottleValue;
+  }
+
   private integrateFixedStep(): void {
     const lagCoefficient =
       1 - Math.exp(-DYNAMICS_STEP_SECONDS / this.options.intakeLagSeconds);
@@ -251,6 +302,7 @@ export class RotationalDynamics {
 
     const rpm = radPerSecondToRpm(this.angularVelocity);
     const driveTorque =
+      this.driveTorqueMultiplier *
       nextEffectiveThrottle *
       interpolateTorqueCurve(this.config.torqueCurve, rpm);
     requireFinite("drive torque", driveTorque);
@@ -284,6 +336,7 @@ export class RotationalDynamics {
       angularVelocityRadPerSec,
       rpm: radPerSecondToRpm(angularVelocityRadPerSec),
       effectiveThrottle: this.effectiveThrottleValue,
+      driveTorqueMultiplier: this.driveTorqueMultiplier,
     };
   }
 }

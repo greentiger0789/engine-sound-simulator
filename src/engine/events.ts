@@ -97,6 +97,78 @@ export class FiringEventGenerator {
   }
 
   /**
+   * Writes crossings into caller-owned typed storage without allocating event
+   * objects, phase clones, intervals, or sort buffers. It is intentionally a
+   * single-cylinder Worklet primitive; the checked public API above retains
+   * atomic multi-cylinder/offline behavior.
+   */
+  public advanceRealtime(
+    angularVelocitiesRadPerSec: Float64Array,
+    length: number,
+    sampleRate: number,
+    startFrame: number,
+    sampleIndices: Int32Array,
+    sampleOffsets: Float64Array,
+  ): number {
+    if (this.cylinders.length !== 1) {
+      throw new RangeError("realtime event path requires one cylinder");
+    }
+    if (
+      !Number.isSafeInteger(length) ||
+      length < 0 ||
+      length > angularVelocitiesRadPerSec.length ||
+      length > Number.MAX_SAFE_INTEGER - startFrame ||
+      startFrame !== this.nextFrame
+    ) {
+      throw new RangeError("invalid realtime frame range");
+    }
+    if (sampleIndices.length !== sampleOffsets.length) {
+      throw new RangeError("realtime event storage lengths must match");
+    }
+    const cylinder = this.cylinders[0]!;
+    let count = 0;
+    for (let index = 0; index < length; index += 1) {
+      const previousAbsoluteDegrees = this.phase.getAbsoluteDegrees();
+      this.phase.advanceRealtime(
+        angularVelocitiesRadPerSec[index]!,
+        sampleRate,
+      );
+      const nextAbsoluteDegrees = this.phase.getAbsoluteDegrees();
+      const span = nextAbsoluteDegrees - previousAbsoluteDegrees;
+      if (span <= 0) continue;
+      let cycleIndex = Math.ceil(
+        (previousAbsoluteDegrees - cylinder.firingAngleDeg) /
+          this.phase.cycleDegrees,
+      );
+      while (
+        cylinder.firingAngleDeg + cycleIndex * this.phase.cycleDegrees <
+        nextAbsoluteDegrees
+      ) {
+        if (
+          count >= sampleIndices.length ||
+          count >= this.maxEventsPerSample * length
+        ) {
+          throw new RangeError("realtime event storage exceeded");
+        }
+        const firing =
+          cylinder.firingAngleDeg + cycleIndex * this.phase.cycleDegrees;
+        sampleIndices[count] = index;
+        sampleOffsets[count] = Math.max(
+          0,
+          Math.min(
+            (firing - previousAbsoluteDegrees) / span,
+            1 - Number.EPSILON,
+          ),
+        );
+        count += 1;
+        cycleIndex += 1;
+      }
+    }
+    this.nextFrame = startFrame + length;
+    return count;
+  }
+
+  /**
    * Advances an a-rate velocity block. `startFrame` must be continuous with
    * prior calls. All inputs are checked before state changes; any error leaves
    * phase and frame untouched.
