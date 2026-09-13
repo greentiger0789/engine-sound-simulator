@@ -96,6 +96,27 @@ describe("RotationalDynamics", () => {
     expect(Number.isFinite(closed.rpm)).toBe(true);
   });
 
+  it("uses a bounded combustion-drive multiplier without cutting idle assist", () => {
+    const driven = dynamics({ initialRpm: 3000, idleGainNmPerRadPerSec: 0 });
+    const cut = dynamics({ initialRpm: 3000, idleGainNmPerRadPerSec: 0 });
+    driven.setThrottle(1);
+    cut.setThrottle(1);
+    cut.setDriveTorqueMultiplier(0);
+    driven.advanceFrames(48_000, 48_000);
+    cut.advanceFrames(48_000, 48_000);
+    expect(driven.getState().driveTorqueMultiplier).toBe(1);
+    expect(cut.getState().driveTorqueMultiplier).toBe(0);
+    expect(driven.getState().rpm).toBeGreaterThan(cut.getState().rpm + 100);
+
+    const idle = dynamics({ initialRpm: 1000 });
+    idle.setDriveTorqueMultiplier(0);
+    idle.advanceFrames(48_000, 48_000);
+    expect(idle.getState().rpm).toBeGreaterThan(900);
+    expect(() => idle.setDriveTorqueMultiplier(-0.01)).toThrow(RangeError);
+    expect(() => idle.setDriveTorqueMultiplier(1.01)).toThrow(RangeError);
+    expect(() => idle.setDriveTorqueMultiplier(Number.NaN)).toThrow(RangeError);
+  });
+
   it("is deterministic and invariant to audio block partitions at 44.1 and 48 kHz", () => {
     const oneSecond44 = 44_100;
     const oneSecond48 = 48_000;
@@ -142,6 +163,10 @@ describe("RotationalDynamics", () => {
     expect(() => model.advanceFrames(-1, 48_000)).toThrow(RangeError);
     expect(() => model.advanceFrames(128, 0)).toThrow(RangeError);
     expect(() => model.advanceFrames(1, Number.MIN_VALUE)).toThrow(RangeError);
+    expect(() => model.advanceRealtimeFrame(Number.MIN_VALUE)).toThrow(
+      RangeError,
+    );
+    expect(() => model.advanceRealtimeFrame(0.01)).toThrow(RangeError);
     expect(() => model.advanceFrames(MAX_FRAME_ADVANCE_SECONDS + 1, 1)).toThrow(
       RangeError,
     );

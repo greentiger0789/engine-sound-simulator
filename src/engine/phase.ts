@@ -55,6 +55,54 @@ export class CrankPhaseIntegrator {
     return { phaseDegrees: this.phaseDegrees, cycleIndex: this.cycleIndex };
   }
 
+  /** Current absolute phase without allocating a public state object. */
+  public getAbsoluteDegrees(): number {
+    const result = this.cycleIndex * this.cycleDegrees + this.phaseDegrees;
+    requireFinite("absolute phase", result);
+    if (Math.abs(result) > Number.MAX_SAFE_INTEGER) {
+      throw new RangeError("absolute phase must remain in the safe range");
+    }
+    return result;
+  }
+
+  /**
+   * Allocation-free single-sample advance for a prevalidated real-time path.
+   * The checked `advance()` API remains the atomic public/offline boundary.
+   */
+  public advanceRealtime(
+    angularVelocityRadPerSec: number,
+    sampleRate: number,
+  ): void {
+    requireFinite("angularVelocityRadPerSec", angularVelocityRadPerSec);
+    if (angularVelocityRadPerSec < 0) {
+      throw new RangeError("angularVelocityRadPerSec must not be negative");
+    }
+    requireFinite("sampleRate", sampleRate);
+    if (sampleRate <= 0)
+      throw new RangeError("sampleRate must be greater than zero");
+    const deltaDegrees =
+      ((angularVelocityRadPerSec / TWO_PI) * FULL_TURN_DEGREES) / sampleRate;
+    requireFinite("phase increment", deltaDegrees);
+    const compensatedDelta = deltaDegrees - this.phaseCompensationDegrees;
+    const summedPhase = this.phaseDegrees + compensatedDelta;
+    this.phaseCompensationDegrees =
+      summedPhase - this.phaseDegrees - compensatedDelta;
+    const cycleAdvance = Math.floor(summedPhase / this.cycleDegrees);
+    let nextPhaseDegrees = summedPhase - cycleAdvance * this.cycleDegrees;
+    const boundaryEpsilonDegrees = Math.min(
+      PHASE_BOUNDARY_EPSILON_DEGREES,
+      this.cycleDegrees * 1e-12,
+      deltaDegrees * 1e-6,
+    );
+    if (cycleAdvance > 0 && nextPhaseDegrees < boundaryEpsilonDegrees) {
+      nextPhaseDegrees = 0;
+    }
+    const nextCycleIndex = this.cycleIndex + cycleAdvance;
+    requireSafeInteger("next cycleIndex", nextCycleIndex);
+    this.phaseDegrees = normalizePhase(nextPhaseDegrees, this.cycleDegrees);
+    this.cycleIndex = nextCycleIndex;
+  }
+
   /** Copies all integration state, including compensated-summation residue. */
   public clone(): CrankPhaseIntegrator {
     const copy = new CrankPhaseIntegrator(

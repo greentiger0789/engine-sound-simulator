@@ -93,6 +93,24 @@ export function App() {
             </output>
           </label>
 
+          <label className="range-control" htmlFor="throttle">
+            <span>Throttle</span>
+            <input
+              id="throttle"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={snapshot.throttle}
+              onChange={(event) =>
+                controller.setThrottle(Number(event.target.value))
+              }
+            />
+            <output htmlFor="throttle" data-testid="throttle-value">
+              {Math.round(snapshot.throttle * 100)}%
+            </output>
+          </label>
+
           <label className="mute-control" htmlFor="muted">
             <input
               id="muted"
@@ -107,6 +125,26 @@ export function App() {
         <p className="status" aria-live="polite">
           Status: <output data-testid="audio-status">{snapshot.status}</output>
         </p>
+        <dl className="telemetry" aria-label="Engine telemetry">
+          <div>
+            <dt>RPM</dt>
+            <dd data-testid="engine-rpm">
+              {Math.round(snapshot.telemetry.rpm)}
+            </dd>
+          </div>
+          <div>
+            <dt>Effective throttle</dt>
+            <dd data-testid="effective-throttle">
+              {Math.round(snapshot.telemetry.effectiveThrottle * 100)}%
+            </dd>
+          </div>
+          <div>
+            <dt>Limiter</dt>
+            <dd data-testid="limiter-state">
+              {snapshot.telemetry.limiterActive ? "active" : "inactive"}
+            </dd>
+          </div>
+        </dl>
         {snapshot.error ? (
           <p className="error" role="alert">
             Audio error ({snapshot.error.code}): {snapshot.error.message}

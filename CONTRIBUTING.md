@@ -20,8 +20,9 @@ make ci
 
 `make dev` で Vite 開発サーバーを起動し、`http://localhost:5173` を
 ブラウザで開けます。`make build` はアプリと Nginx 配信 image を作成します。
-製品 UI から低音量の合成基準信号を開始・停止し、音量とミュートを操作できます。
-エンジン計算と燃焼音は後続チケットで追加します。
+製品 UI から低音量の単気筒合成音を開始・停止し、音量、ミュート、
+アクセルを操作できます。回転・燃焼位相・燃焼パルスは AudioWorklet 内で
+音声時間を基準に計算し、RPM、実効開度、レブリミッター状態を UI に表示します。
 
 ## ブランチと PR
 
@@ -38,7 +39,8 @@ make ci
 現時点では Docker ビルド、Prettier、Markdownlint、actionlint、Hadolint、
 Gitleaks（コミット履歴）、ESLint、TypeScript、Vitest、Playwright による
 Chromium 検証を実行します。Playwright は開発版と Nginx 配信版の実際の
-AudioWorklet 読み込みと製品 UI の開始・停止・音量・ミュートを確認します。
+AudioWorklet 読み込み、構成 ready handshake、RPM telemetry と製品 UI の
+開始・停止・アクセル・音量・ミュートを確認します。
 
 チケットカタログの依存関係・パス検証と、その検証スクリプトのテストも `make ci` に含みます。共有スキルと Codex 設定は許可したパスだけを Git に含め、ローカルの認証やセッション状態はコミットしません。
 
