@@ -127,6 +127,92 @@ describe("multi-cylinder presets", () => {
     }
   });
 
+  it("keeps multi-cylinder fractional event timing continuous across irregular buffers", () => {
+    const config = evenlySpacedTriplePreset.config;
+    const velocities = new Float64Array(120).fill(7 * ONE_DEGREE_PER_SAMPLE);
+    const direct = new FiringEventGenerator({
+      cycleDegrees: config.cycleDegrees,
+      cylinders: config.cylinders,
+    }).advanceSamples(velocities, 1);
+
+    const splitGenerator = new FiringEventGenerator({
+      cycleDegrees: config.cycleDegrees,
+      cylinders: config.cylinders,
+    });
+    const splitBlocks = [13, 20, 17, 70];
+    let start = 0;
+    const split = splitBlocks.flatMap((length) => {
+      const events = splitGenerator.advanceSamples(
+        velocities.subarray(start, start + length),
+        1,
+      );
+      const result = events.map((event) => ({
+        ...event,
+        globalSampleIndex: start + event.sampleIndex,
+      }));
+      start += length;
+      return result;
+    });
+
+    const expectedCylinder = config.cylinders.find(
+      (cylinder) => cylinder.firingAngleDeg === 0,
+    );
+    expect(expectedCylinder).toBeDefined();
+    expect(direct).toContainEqual(
+      expect.objectContaining({
+        cylinderId: expectedCylinder?.id,
+        cycleIndex: 1,
+        sampleIndex: 102,
+        sampleOffset: 6 / 7,
+        absoluteFrame: 102 + 6 / 7,
+      }),
+    );
+    // The next-cycle zero-degree firing lands in the final, non-cycle-aligned buffer.
+    expect(split).toContainEqual(
+      expect.objectContaining({
+        cylinderId: expectedCylinder?.id,
+        cycleIndex: 1,
+        sampleIndex: 52,
+        globalSampleIndex: 102,
+        sampleOffset: 6 / 7,
+        absoluteFrame: 102 + 6 / 7,
+      }),
+    );
+    expect(
+      split.map(
+        ({
+          cylinderId,
+          cycleIndex,
+          globalSampleIndex,
+          sampleOffset,
+          absoluteFrame,
+        }) => ({
+          cylinderId,
+          cycleIndex,
+          sampleIndex: globalSampleIndex,
+          sampleOffset,
+          absoluteFrame,
+        }),
+      ),
+    ).toEqual(
+      direct.map(
+        ({
+          cylinderId,
+          cycleIndex,
+          sampleIndex,
+          sampleOffset,
+          absoluteFrame,
+        }) => ({
+          cylinderId,
+          cycleIndex,
+          sampleIndex,
+          sampleOffset,
+          absoluteFrame,
+        }),
+      ),
+    );
+  });
+
   it("sorts simultaneous firing by cylinder ID without changing its sample time", () => {
     const events = new FiringEventGenerator({
       cycleDegrees: 720,
