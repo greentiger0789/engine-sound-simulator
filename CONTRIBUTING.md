@@ -34,6 +34,8 @@ make ci
 
 コミットメッセージは `feat:`、`fix:`、`docs:`、`chore:` などで目的を示してください。音声変更の PR には、RPM・プリセット・サンプルレート・比較条件と聴感確認結果を記載します。
 
+PR 本文は [PR テンプレート](.github/pull_request_template.md) を基に日本語で記載し、テンプレートの見出しとチェック項目を維持します。
+
 ## CI の範囲
 
 現時点では Docker ビルド、Prettier、Markdownlint、actionlint、Hadolint、
@@ -41,6 +43,8 @@ Gitleaks（コミット履歴）、ESLint、TypeScript、Vitest、Playwright に
 Chromium 検証を実行します。Playwright は開発版と Nginx 配信版の実際の
 AudioWorklet 読み込み、構成 ready handshake、RPM telemetry と製品 UI の
 開始・停止・アクセル・音量・ミュートを確認します。
+
+GitHub Actions では、Docker layer を再利用するアプリ検証、ブラウザ E2E、リポジトリ・セキュリティ検証を並列実行します。必須ジョブ `Repository checks` は、いずれかが失敗・キャンセル・スキップされた場合も含めて結果を集約します。
 
 チケットカタログの依存関係・パス検証と、その検証スクリプトのテストも `make ci` に含みます。共有スキルと Codex 設定は許可したパスだけを Git に含め、ローカルの認証やセッション状態はコミットしません。
 

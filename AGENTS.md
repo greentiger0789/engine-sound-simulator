@@ -6,6 +6,8 @@ When the user says `チケット1を対応して`, `チケット N を実装し�
 
 A ticket request authorizes a new feature branch, implementation, relevant Docker checks, self-review and fixes, commits, push, and a **Draft PR** to this repository. Stop at the Draft PR; do not merge, mark ready, deploy, or start unrelated tickets. Do not ask again for these already requested steps. Actual tool permissions still apply.
 
+Ticket PR descriptions must be derived explicitly from [.github/pull_request_template.md](.github/pull_request_template.md) and completed in Japanese; the implementation-ticket skill defines the required evidence and creation/update procedure.
+
 For a resumed PR that a human already marked ready, preserve that state unless the user explicitly requests Draft again; report the existing state instead of creating a duplicate PR. Newly created PRs are always Draft.
 
 Read the selected ticket and its referenced plan sections, not every ticket. A dependency must be verified and merged into `origin/main`. If it is missing, report the exact prerequisite; do not silently implement multiple tickets. Resume an existing ticket branch/PR when present rather than duplicating it.
