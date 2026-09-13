@@ -190,5 +190,13 @@
     "milestone": "M6",
     "depends_on": [6, 20, 23],
     "file": "docs/tickets/024-drivetrain-load-and-gear.md"
+  },
+  {
+    "id": 25,
+    "slug": "oxlint-migration",
+    "title": "Oxlint への Lint 基盤移行",
+    "milestone": "M3",
+    "depends_on": [4],
+    "file": "docs/tickets/025-oxlint-migration.md"
   }
 ]

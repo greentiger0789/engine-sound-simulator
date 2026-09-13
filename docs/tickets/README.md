@@ -38,6 +38,7 @@
 | 22  | M6             | [2ストローク](022-two-stroke-cycle-support.md)                      | 10, 20         | H          |
 | 23  | M6             | [V型/自動車 preset](023-v-and-automotive-presets.md)                | 17, 20, 22     | H          |
 | 24  | M6             | [drivetrain/gear](024-drivetrain-load-and-gear.md)                  | 6, 20, 23      | H          |
+| 25  | M3             | [Oxlint移行](025-oxlint-migration.md)                               | 4              | I          |
 
 ## DAG と並行レーン
 
@@ -70,6 +71,7 @@ flowchart LR
   T20[20] --> T22[22]
   T22[22] --> T23[23]
   T23[23] --> T24[24]
+  T4[4] --> T25[25]
 ```
 
-レーンAは基盤を直列に確定する。M2以降は、依存が verified になった時点で C/D や、M4の関連作業を部分的に並行化できる。DAGにない共有ファイルを同時に編集する場合は、一方を小さな先行PRにする。
+レーンAは基盤を直列に確定する。M2以降は、依存が verified になった時点で C/D や、M4の関連作業を部分的に並行化できる。レーンIは機能DAGと独立した開発基盤更新である。DAGにない共有ファイルを同時に編集する場合は、一方を小さな先行PRにする。
