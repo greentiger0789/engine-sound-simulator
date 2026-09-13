@@ -30,7 +30,7 @@ function finiteUnit(name: string, value: number): number {
   return value;
 }
 
-/** Audio-time integration of a validated single-cylinder engine snapshot. */
+/** Audio-time integration of a validated one-to-four-cylinder snapshot. */
 export class EngineAudioProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
@@ -165,7 +165,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         throw new RangeError("requestId must be a non-empty string");
       if (!Number.isSafeInteger(config?.version) || config.version < 1)
         throw new RangeError("config version must be a positive safe integer");
-      const parsed = parseEngineConfig(config.snapshot, { maxCylinders: 1 });
+      const parsed = parseEngineConfig(config.snapshot, { maxCylinders: 4 });
       if (!parsed.ok)
         throw new RangeError(
           parsed.issues

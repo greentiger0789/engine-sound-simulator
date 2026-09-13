@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineAudioProcessorOptions } from "../../src/audio/worklets/contracts";
 import { ENGINE_AUDIO_PROCESSOR_NAME } from "../../src/audio/worklets/contracts";
 import { singleCylinderPreset } from "../../src/presets/single-cylinder";
+import {
+  evenlySpacedTriplePreset,
+  evenlySpacedFourPreset,
+  parallelTwin360Preset,
+} from "../../src/presets/multicylinder";
 
 class FakePort {
   readonly messages: unknown[] = [];
@@ -107,6 +112,45 @@ describe("EngineAudioProcessor", () => {
       new Float32Array(32),
     );
   });
+
+  it.each([
+    singleCylinderPreset.config,
+    parallelTwin360Preset.config,
+    evenlySpacedTriplePreset.config,
+    evenlySpacedFourPreset.config,
+  ])(
+    "accepts and freshly resets a validated multi-cylinder snapshot",
+    async (snapshot) => {
+      vi.stubGlobal("sampleRate", 48000);
+      await import("../../src/audio/worklets/engine-audio-processor");
+      const processor = new registeredProcessor!(options("one"));
+      render(processor, 256, new Float32Array([1]));
+      const internal = processor as unknown as {
+        framesRendered: number;
+        runtime: { config: { cylinders: readonly unknown[] } };
+      };
+      processor.port.onmessage?.({
+        data: {
+          type: "replace-config",
+          requestId: "replacement",
+          config: { version: 1, snapshot: structuredClone(snapshot) },
+        },
+      } as MessageEvent);
+      expect(processor.port.messages.slice(-2)).toEqual([
+        { type: "config-applied", requestId: "replacement" },
+        { type: "ready", requestId: "replacement", sampleRate: 48000 },
+      ]);
+      expect(internal.framesRendered).toBe(0);
+      expect(internal.runtime.config.cylinders).toHaveLength(
+        snapshot.cylinders.length,
+      );
+      expect(
+        [...render(processor, 127, new Float32Array([0.5]))].every(
+          Number.isFinite,
+        ),
+      ).toBe(true);
+    },
+  );
 
   it("treats scalar and a-rate throttle equivalently and accepts a mid-block opening", async () => {
     vi.stubGlobal("sampleRate", 48000);

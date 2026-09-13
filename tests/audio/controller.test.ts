@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AudioController } from "../../src/audio/controller";
+import { singleCylinderPreset } from "../../src/presets/single-cylinder";
 
 class FakeAudioParam {
   value = 1;
@@ -51,12 +52,14 @@ class FakeAudioWorkletNode {
   ]);
   onprocessorerror: (() => void) | null = null;
   disconnected = false;
+  readonly options: AudioWorkletNodeOptions | undefined;
 
   constructor(
     _context?: AudioContext,
     _name?: string,
     options?: AudioWorkletNodeOptions,
   ) {
+    this.options = options;
     FakeAudioWorkletNode.instances.push(this);
     if (FakeAudioWorkletNode.automaticallyReady) {
       queueMicrotask(() => {
@@ -190,6 +193,44 @@ describe("AudioController", () => {
 
     controller.setThrottle(0.35);
     expect(throttle.calls).toContainEqual(["set", 0.35, 10]);
+  });
+
+  it("uses the calibrated reference gain while retaining the processor gain path", async () => {
+    const controller = new AudioController();
+    await controller.start();
+    const gain = FakeAudioWorkletNode.instances[0].parameters.get("gain")!;
+    expect(gain.calls).toContainEqual(["set", 0.5, 10]);
+  });
+
+  it("stages only a valid stopped 720-degree snapshot without creating audio", () => {
+    const controller = new AudioController();
+    const source = { ...singleCylinderPreset.config, id: "staged" };
+    const staged = controller.stageConfig(source);
+
+    expect(staged).toMatchObject({ ok: true, value: { id: "staged" } });
+    expect(FakeAudioContext.instances).toHaveLength(0);
+    expect(controller.getSnapshot()).toMatchObject({
+      activeConfig: { id: singleCylinderPreset.config.id },
+      pendingConfig: { id: "staged" },
+    });
+    source.id = "mutated-after-stage";
+    expect(controller.getSnapshot().pendingConfig?.id).toBe("staged");
+
+    const invalid = controller.stageConfig({
+      ...singleCylinderPreset.config,
+      cycleDegrees: 360,
+    });
+    expect(invalid).toMatchObject({ ok: false, reason: "validation" });
+    expect(controller.getSnapshot().pendingConfig?.id).toBe("staged");
+  });
+
+  it("rejects staging while audio is active", async () => {
+    const controller = new AudioController();
+    await controller.start();
+    expect(controller.stageConfig(singleCylinderPreset.config)).toEqual({
+      ok: false,
+      reason: "audio-active",
+    });
   });
 
   it("maps unavailable audio and processor errors to displayable snapshots", async () => {
@@ -380,10 +421,64 @@ describe("AudioController", () => {
     expect(controller.getSnapshot().status).toBe("running");
   });
 
+  it("does not promote pending config for ready-first or stale-node acknowledgements", async () => {
+    FakeAudioWorkletNode.automaticallyReady = false;
+    const controller = new AudioController();
+    const staged = { ...singleCylinderPreset.config, id: "ordering-config" };
+    controller.stageConfig(staged);
+    await controller.start();
+    const firstHandler = FakeAudioWorkletNode.instances[0].port.onmessage!;
+
+    firstHandler({
+      data: { type: "ready", requestId: "1", sampleRate: 48000 },
+    } as MessageEvent);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "starting",
+      activeConfig: { id: singleCylinderPreset.config.id },
+      pendingConfig: { id: "ordering-config" },
+    });
+
+    firstHandler({
+      data: { type: "config-rejected", requestId: "1", message: "reject" },
+    } as MessageEvent);
+    await Promise.resolve();
+    await controller.start();
+    const secondHandler = FakeAudioWorkletNode.instances[1].port.onmessage!;
+    firstHandler({
+      data: { type: "config-applied", requestId: "2" },
+    } as MessageEvent);
+    firstHandler({
+      data: { type: "ready", requestId: "2", sampleRate: 48000 },
+    } as MessageEvent);
+    expect(controller.getSnapshot().status).toBe("starting");
+    expect(controller.getSnapshot().pendingConfig?.id).toBe("ordering-config");
+
+    secondHandler({
+      data: { type: "config-applied", requestId: "2" },
+    } as MessageEvent);
+    secondHandler({
+      data: { type: "ready", requestId: "2", sampleRate: 48000 },
+    } as MessageEvent);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "running",
+      activeConfig: { id: "ordering-config" },
+      pendingConfig: null,
+    });
+  });
+
   it("tears down a rejected configuration and retains it for a retry", async () => {
     FakeAudioWorkletNode.automaticallyReady = false;
     const controller = new AudioController();
+    const staged = { ...singleCylinderPreset.config, id: "retry-config" };
+    expect(controller.stageConfig(staged)).toMatchObject({ ok: true });
     await controller.start();
+    expect(
+      (
+        FakeAudioWorkletNode.instances[0].options?.processorOptions as {
+          config: { snapshot: { id: string } };
+        }
+      ).config.snapshot.id,
+    ).toBe("retry-config");
     FakeAudioWorkletNode.instances[0].port.onmessage?.({
       data: { type: "config-rejected", requestId: "1", message: "bad config" },
     } as MessageEvent);
@@ -391,11 +486,65 @@ describe("AudioController", () => {
       status: "error",
       error: { code: "config-rejected", recoverable: true },
     });
+    expect(controller.getSnapshot()).toMatchObject({
+      activeConfig: { id: singleCylinderPreset.config.id },
+      pendingConfig: { id: "retry-config" },
+    });
     await Promise.resolve();
 
     FakeAudioWorkletNode.automaticallyReady = true;
     await controller.start();
     expect(FakeAudioWorkletNode.instances).toHaveLength(2);
     expect(controller.getSnapshot().status).toBe("running");
+    expect(controller.getSnapshot()).toMatchObject({
+      activeConfig: { id: "retry-config" },
+      pendingConfig: null,
+    });
+  });
+
+  it("recovers a rejected configuration by staging a corrected stopped snapshot", async () => {
+    FakeAudioWorkletNode.automaticallyReady = false;
+    const controller = new AudioController();
+    const rejected = { ...singleCylinderPreset.config, id: "rejected-config" };
+    expect(controller.stageConfig(rejected)).toMatchObject({ ok: true });
+    await controller.start();
+    FakeAudioWorkletNode.instances[0].port.onmessage?.({
+      data: { type: "config-rejected", requestId: "1", message: "bad config" },
+    } as MessageEvent);
+    await Promise.resolve();
+
+    const corrected = {
+      ...singleCylinderPreset.config,
+      id: "corrected-config",
+    };
+    expect(
+      controller.stageConfig({ ...corrected, cycleDegrees: 360 }),
+    ).toMatchObject({ ok: false, reason: "validation" });
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: { code: "config-rejected", message: "bad config" },
+      pendingConfig: { id: "rejected-config" },
+    });
+
+    expect(controller.stageConfig(corrected)).toMatchObject({ ok: true });
+    expect(FakeAudioContext.instances).toHaveLength(1);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "idle",
+      error: null,
+      activeConfig: { id: singleCylinderPreset.config.id },
+      pendingConfig: { id: "corrected-config" },
+    });
+
+    await controller.start();
+    const retry = FakeAudioWorkletNode.instances[1].port.onmessage!;
+    retry({ data: { type: "config-applied", requestId: "2" } } as MessageEvent);
+    retry({
+      data: { type: "ready", requestId: "2", sampleRate: 48000 },
+    } as MessageEvent);
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "running",
+      activeConfig: { id: "corrected-config" },
+      pendingConfig: null,
+    });
   });
 });
