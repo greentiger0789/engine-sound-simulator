@@ -45,6 +45,36 @@ function continuousEventFields(events: readonly FiringEvent[]) {
   );
 }
 
+function realtimeEventFields(
+  generator: FiringEventGenerator,
+  velocities: Float64Array,
+  sampleRate: number,
+  partitions: readonly number[],
+) {
+  const sampleIndices = new Int32Array(256);
+  const sampleOffsets = new Float64Array(256);
+  const result: Array<{ sampleIndex: number; sampleOffset: number }> = [];
+  let start = 0;
+  for (const length of partitions) {
+    const count = generator.advanceRealtime(
+      velocities.subarray(start, start + length),
+      length,
+      sampleRate,
+      start,
+      sampleIndices,
+      sampleOffsets,
+    );
+    for (let event = 0; event < count; event += 1) {
+      result.push({
+        sampleIndex: start + sampleIndices[event]!,
+        sampleOffset: sampleOffsets[event]!,
+      });
+    }
+    start += length;
+  }
+  return result;
+}
+
 describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
   it("normalizes phase and scans each advance as [previous, next)", () => {
     expect(normalizePhase(-1, 720)).toBe(719);
@@ -222,6 +252,133 @@ describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
         continuousEventFields(direct),
       );
     }
+  });
+
+  it("matches checked multi-cylinder crossings in caller-owned realtime storage", () => {
+    const options = {
+      cycleDegrees: 720,
+      // Deliberately unsorted input verifies validation's angle/id tie order.
+      cylinders: [
+        { id: "z-coincident", firingAngleDeg: 0 },
+        { id: "end-of-cycle", firingAngleDeg: 719 },
+        { id: "a-coincident", firingAngleDeg: 0 },
+        { id: "middle", firingAngleDeg: 180 },
+      ],
+      initialPhaseDegrees: 718,
+    } as const;
+    const sampleRate = 1;
+    const velocities = new Float64Array(400);
+    velocities.fill((5 * 2 * Math.PI) / 360);
+    velocities.fill(0, 41, 44);
+    velocities.fill((11 * 2 * Math.PI) / 360, 125, 190);
+    const partitions = [1, 7, 13, 2, 31, 89, 101, 156];
+
+    const checkedGenerator = new FiringEventGenerator(options);
+    const checked: Array<{ sampleIndex: number; sampleOffset: number }> = [];
+    let start = 0;
+    for (const length of partitions) {
+      checked.push(
+        ...checkedGenerator
+          .advanceSamples(
+            velocities.subarray(start, start + length),
+            sampleRate,
+          )
+          .map((event) => ({
+            sampleIndex: start + event.sampleIndex,
+            sampleOffset: event.sampleOffset,
+          })),
+      );
+      start += length;
+    }
+
+    const realtimeGenerator = new FiringEventGenerator(options);
+    const realtime = realtimeEventFields(
+      realtimeGenerator,
+      velocities,
+      sampleRate,
+      partitions,
+    );
+    expect(realtime).toHaveLength(checked.length);
+    for (let index = 0; index < checked.length; index += 1) {
+      expect(realtime[index]?.sampleIndex).toBe(checked[index]?.sampleIndex);
+      expect(realtime[index]?.sampleOffset).toBeCloseTo(
+        checked[index]?.sampleOffset as number,
+        12,
+      );
+    }
+    // Frame zero crosses 719 then the wrapped 0-degree simultaneous pair.
+    expect(
+      new FiringEventGenerator(options)
+        .advanceSamples(velocities.subarray(0, 1), sampleRate)
+        .map((event) => event.cylinderId),
+    ).toEqual(["end-of-cycle", "a-coincident", "z-coincident"]);
+    expect(realtimeGenerator.getPhaseState()).toEqual(
+      checkedGenerator.getPhaseState(),
+    );
+    expect(realtimeGenerator.getNextFrame()).toBe(velocities.length);
+  });
+
+  it("checks realtime density and caller storage capacity", () => {
+    const densityLimited = new FiringEventGenerator({
+      cycleDegrees: 720,
+      cylinders: [
+        { id: "a", firingAngleDeg: 0 },
+        { id: "b", firingAngleDeg: 0 },
+      ],
+      maxEventsPerSample: 1,
+    });
+    const before = densityLimited.getPhaseState();
+    expect(() =>
+      densityLimited.advanceRealtime(
+        new Float64Array([(2 * Math.PI) / 360]),
+        1,
+        1,
+        0,
+        new Int32Array(2),
+        new Float64Array(2),
+      ),
+    ).toThrow("event density exceeds maxEventsPerSample");
+    expect(densityLimited.getPhaseState()).toEqual(before);
+
+    const storageLimited = new FiringEventGenerator({
+      cycleDegrees: 720,
+      cylinders: [
+        { id: "a", firingAngleDeg: 0 },
+        { id: "b", firingAngleDeg: 0 },
+      ],
+    });
+    const storageBefore = [
+      storageLimited.getPhaseState(),
+      storageLimited.getNextFrame(),
+    ];
+    expect(() =>
+      storageLimited.advanceRealtime(
+        new Float64Array([(2 * Math.PI) / 360]),
+        1,
+        1,
+        0,
+        new Int32Array(1),
+        new Float64Array(1),
+      ),
+    ).toThrow("realtime event storage exceeded");
+    expect([
+      storageLimited.getPhaseState(),
+      storageLimited.getNextFrame(),
+    ]).toEqual(storageBefore);
+    const sampleIndices = new Int32Array(2);
+    const sampleOffsets = new Float64Array(2);
+    expect(
+      storageLimited.advanceRealtime(
+        new Float64Array([(2 * Math.PI) / 360]),
+        1,
+        1,
+        0,
+        sampleIndices,
+        sampleOffsets,
+      ),
+    ).toBe(2);
+    expect([...sampleIndices]).toEqual([0, 0]);
+    expect([...sampleOffsets]).toEqual([0, 0]);
   });
 
   it("emits none at zero rpm and rejects invalid input atomically", () => {

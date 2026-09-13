@@ -10,7 +10,11 @@ import {
   type EngineAudioConfig,
   type ProcessorToControllerMessage,
 } from "./worklets/contracts";
-import { parseEngineConfig, type EngineConfig } from "../engine/config";
+import {
+  parseEngineConfig,
+  type EngineConfig,
+  type EngineConfigValidationIssue,
+} from "../engine/config";
 import { singleCylinderEngineConfig } from "../presets/single-cylinder";
 
 export type AudioControllerStatus = AudioLifecycleStatus;
@@ -38,7 +42,20 @@ export interface AudioControllerSnapshot {
   readonly error: AudioControllerError | null;
   readonly throttle: number;
   readonly telemetry: AudioTelemetry;
+  /** Last configuration confirmed by the processor. */
+  readonly activeConfig: EngineConfig;
+  /** Validated configuration waiting for the next start acknowledgement. */
+  readonly pendingConfig: EngineConfig | null;
 }
+
+export type ConfigStageResult =
+  | { readonly ok: true; readonly value: EngineConfig }
+  | {
+      readonly ok: false;
+      readonly reason: "validation";
+      readonly issues: readonly EngineConfigValidationIssue[];
+    }
+  | { readonly ok: false; readonly reason: "audio-active" };
 
 export interface AudioTelemetry {
   readonly rpm: number;
@@ -49,7 +66,7 @@ export interface AudioTelemetry {
 type SnapshotListener = () => void;
 
 const FADE_SECONDS = 0.03;
-const REFERENCE_GAIN = 0.15;
+const REFERENCE_GAIN = 0.5;
 const INITIAL_TELEMETRY: AudioTelemetry = {
   rpm: 0,
   effectiveThrottle: 0,
@@ -90,7 +107,9 @@ export class AudioController {
   private configApplied = false;
   private requestId = 0;
   private activeRequestId: string | null = null;
-  private readonly lastValidConfig = validatedSingleCylinderConfig();
+  private activeConfig = validatedSingleCylinderConfig();
+  private pendingConfig: EngineConfig | null = null;
+  private requestedConfig: EngineConfig | null = null;
   private stopRequested = false;
   private disposed = false;
   private readonly listeners = new Set<SnapshotListener>();
@@ -101,6 +120,8 @@ export class AudioController {
     error: null,
     throttle: 0,
     telemetry: INITIAL_TELEMETRY,
+    activeConfig: this.activeConfig,
+    pendingConfig: null,
   };
 
   getSnapshot(): AudioControllerSnapshot {
@@ -184,6 +205,44 @@ export class AudioController {
     }
   }
 
+  /**
+   * Validates and stages an editor snapshot without touching browser audio.
+   * The editor is intentionally a 720 degree, four-stroke-only surface.
+   */
+  stageConfig(input: unknown): ConfigStageResult {
+    const recoveringRejectedConfig =
+      this.snapshot.status === "error" &&
+      this.snapshot.error?.code === "config-rejected" &&
+      this.context === null &&
+      this.node === null &&
+      this.fadeGain === null &&
+      this.volumeGain === null;
+    if (this.snapshot.status !== "idle" && !recoveringRejectedConfig) {
+      return { ok: false, reason: "audio-active" };
+    }
+    const parsed = parseEngineConfig(input, { maxCylinders: 4 });
+    const issues: EngineConfigValidationIssue[] = parsed.ok
+      ? []
+      : [...parsed.issues];
+    if (parsed.ok && parsed.value.cycleDegrees !== 720) {
+      issues.push({
+        path: "$.cycleDegrees",
+        message: "must be 720 for the four-stroke editor",
+      });
+    }
+    if (!parsed.ok || issues.length > 0) {
+      return { ok: false, reason: "validation", issues };
+    }
+    // parseEngineConfig constructs a new typed object, so this is detached
+    // from the caller's untrusted object before it becomes observable state.
+    this.pendingConfig = parsed.value;
+    this.setSnapshot({
+      ...(recoveringRejectedConfig ? { status: "idle", error: null } : {}),
+      pendingConfig: this.pendingConfig,
+    });
+    return { ok: true, value: this.pendingConfig };
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -265,9 +324,10 @@ export class AudioController {
       }
 
       const requestId = String(++this.requestId);
+      const configToApply = this.pendingConfig ?? this.activeConfig;
       const config: EngineAudioConfig = {
         version: 1,
-        snapshot: this.lastValidConfig,
+        snapshot: configToApply,
       };
       const node = new AudioWorkletNode(context, ENGINE_AUDIO_PROCESSOR_NAME, {
         processorOptions: { requestId, config },
@@ -280,6 +340,7 @@ export class AudioController {
       this.processorReady = false;
       this.configApplied = false;
       this.activeRequestId = requestId;
+      this.requestedConfig = configToApply;
       node.onprocessorerror = () => this.handleProcessorError();
       node.port.onmessage = (event) => this.handleProcessorMessage(node, event);
       node.parameters
@@ -364,6 +425,19 @@ export class AudioController {
       // accepted. In particular, ignore a reversed or stale handshake.
       if (!this.configApplied) return;
       this.processorReady = true;
+      // A pending snapshot becomes active only after this node has confirmed
+      // the exact initialization handshake in order.
+      if (
+        this.pendingConfig !== null &&
+        this.requestedConfig === this.pendingConfig
+      ) {
+        this.activeConfig = this.pendingConfig;
+        this.pendingConfig = null;
+        this.setSnapshot({
+          activeConfig: this.activeConfig,
+          pendingConfig: null,
+        });
+      }
       if (
         this.snapshot.status === "starting" &&
         this.context &&
@@ -379,8 +453,11 @@ export class AudioController {
         }
       }
     } else if (message.type === "config-rejected") {
+      // Begin detaching the failed graph before notifying listeners. A listener
+      // may synchronously stage a corrected snapshot from the error state.
+      const teardown = this.teardown();
       this.fail("config-rejected", message.message, true);
-      void this.teardown();
+      void teardown;
     } else if (message.type === "telemetry") {
       if (
         Number.isFinite(message.rpm) &&
@@ -464,6 +541,7 @@ export class AudioController {
     this.processorReady = false;
     this.configApplied = false;
     this.activeRequestId = null;
+    this.requestedConfig = null;
     if (node !== null) {
       node.onprocessorerror = null;
       node.port.onmessage = null;
