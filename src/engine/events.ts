@@ -141,7 +141,6 @@ export class FiringEventGenerator {
       const nextAbsoluteDegrees = this.phase.getAbsoluteDegrees();
       const span = nextAbsoluteDegrees - previousAbsoluteDegrees;
       if (span <= 0) continue;
-      let eventsThisSample = 0;
       let previousFiring = Number.NEGATIVE_INFINITY;
       let previousCylinderIndex = -1;
       for (;;) {
@@ -182,7 +181,6 @@ export class FiringEventGenerator {
           ),
         );
         count += 1;
-        eventsThisSample += 1;
         previousFiring = nextFiring;
         previousCylinderIndex = nextCylinderIndex;
       }
