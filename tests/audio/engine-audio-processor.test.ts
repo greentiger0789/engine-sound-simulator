@@ -211,6 +211,48 @@ describe("EngineAudioProcessor", () => {
     );
   });
 
+  it("applies the gain AudioParam as an exact post-protection PCM scale", async () => {
+    vi.stubGlobal("sampleRate", 48000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const low = new registeredProcessor!(options("low-gain"));
+    const high = new registeredProcessor!(options("high-gain"));
+    let lowEnergy = 0;
+    let highEnergy = 0;
+    let lowPeak = 0;
+    let highPeak = 0;
+    const framesPerBlock = 512;
+    const blockCount = 64;
+    for (let block = 0; block < blockCount; block += 1) {
+      const lowOutput = render(
+        low,
+        framesPerBlock,
+        new Float32Array([1]),
+        new Float32Array([0.15]),
+      );
+      const highOutput = render(
+        high,
+        framesPerBlock,
+        new Float32Array([1]),
+        new Float32Array([1]),
+      );
+      for (let frame = 0; frame < framesPerBlock; frame += 1) {
+        const lowSample = lowOutput[frame]!;
+        const highSample = highOutput[frame]!;
+        expect(Number.isFinite(lowSample)).toBe(true);
+        expect(Number.isFinite(highSample)).toBe(true);
+        lowEnergy += lowSample * lowSample;
+        highEnergy += highSample * highSample;
+        lowPeak = Math.max(lowPeak, Math.abs(lowSample));
+        highPeak = Math.max(highPeak, Math.abs(highSample));
+      }
+    }
+    const ratio = 1 / 0.15;
+    expect(lowPeak).toBeGreaterThan(0);
+    expect(highPeak).toBeLessThanOrEqual(1);
+    expect(highPeak / lowPeak).toBeCloseTo(ratio, 5);
+    expect(Math.sqrt(highEnergy / lowEnergy)).toBeCloseTo(ratio, 5);
+  });
+
   it("follows throttle up and back to idle while limiting telemetry to 30 Hz", async () => {
     vi.stubGlobal("sampleRate", 48000);
     await import("../../src/audio/worklets/engine-audio-processor");
