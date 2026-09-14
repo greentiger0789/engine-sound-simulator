@@ -199,7 +199,7 @@ describe("AudioController", () => {
     const controller = new AudioController();
     await controller.start();
     const gain = FakeAudioWorkletNode.instances[0].parameters.get("gain")!;
-    expect(gain.calls).toContainEqual(["set", 0.5, 10]);
+    expect(gain.calls).toContainEqual(["set", 1, 10]);
   });
 
   it("stages only a valid stopped 720-degree snapshot without creating audio", () => {

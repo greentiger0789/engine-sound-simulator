@@ -66,7 +66,7 @@ export interface AudioTelemetry {
 type SnapshotListener = () => void;
 
 const FADE_SECONDS = 0.03;
-const REFERENCE_GAIN = 0.5;
+const REFERENCE_GAIN = 1;
 const INITIAL_TELEMETRY: AudioTelemetry = {
   rpm: 0,
   effectiveThrottle: 0,

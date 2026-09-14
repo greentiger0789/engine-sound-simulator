@@ -211,6 +211,67 @@ describe("EngineAudioProcessor", () => {
     );
   });
 
+  it("emits calibrated finite PCM at 44100 Hz and applies post-protection gain", async () => {
+    vi.stubGlobal("sampleRate", 44100);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const low = new registeredProcessor!(options("low-gain"));
+    const high = new registeredProcessor!(options("high-gain"));
+    const idle = new registeredProcessor!(options("idle"));
+    let lowEnergy = 0;
+    let highEnergy = 0;
+    let lowPeak = 0;
+    let highPeak = 0;
+    let idleEnergy = 0;
+    let idlePeak = 0;
+    const framesPerBlock = 512;
+    const blockCount = 64;
+    for (let block = 0; block < blockCount; block += 1) {
+      const lowOutput = render(
+        low,
+        framesPerBlock,
+        new Float32Array([1]),
+        new Float32Array([0.15]),
+      );
+      const highOutput = render(
+        high,
+        framesPerBlock,
+        new Float32Array([1]),
+        new Float32Array([1]),
+      );
+      const idleOutput = render(
+        idle,
+        framesPerBlock,
+        new Float32Array([0]),
+        new Float32Array([1]),
+      );
+      for (let frame = 0; frame < framesPerBlock; frame += 1) {
+        const lowSample = lowOutput[frame]!;
+        const highSample = highOutput[frame]!;
+        const idleSample = idleOutput[frame]!;
+        expect(Number.isFinite(lowSample)).toBe(true);
+        expect(Number.isFinite(highSample)).toBe(true);
+        expect(Number.isFinite(idleSample)).toBe(true);
+        lowEnergy += lowSample * lowSample;
+        highEnergy += highSample * highSample;
+        idleEnergy += idleSample * idleSample;
+        lowPeak = Math.max(lowPeak, Math.abs(lowSample));
+        highPeak = Math.max(highPeak, Math.abs(highSample));
+        idlePeak = Math.max(idlePeak, Math.abs(idleSample));
+      }
+    }
+    const ratio = 1 / 0.15;
+    const highRms = Math.sqrt(highEnergy / (framesPerBlock * blockCount));
+    const idleRms = Math.sqrt(idleEnergy / (framesPerBlock * blockCount));
+    expect(lowPeak).toBeGreaterThan(0);
+    expect(highPeak).toBeGreaterThan(0.7);
+    expect(highPeak).toBeLessThan(1);
+    expect(highRms).toBeGreaterThan(0.35);
+    expect(idlePeak).toBeGreaterThan(0.5);
+    expect(idleRms).toBeGreaterThan(0.1);
+    expect(highPeak / lowPeak).toBeCloseTo(ratio, 5);
+    expect(Math.sqrt(highEnergy / lowEnergy)).toBeCloseTo(ratio, 5);
+  });
+
   it("follows throttle up and back to idle while limiting telemetry to 30 Hz", async () => {
     vi.stubGlobal("sampleRate", 48000);
     await import("../../src/audio/worklets/engine-audio-processor");

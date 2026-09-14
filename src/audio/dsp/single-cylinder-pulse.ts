@@ -3,7 +3,7 @@ import type { FiringEvent } from "../../engine/events";
 /** Configuration for the procedural combustion-pulse renderer. */
 export interface SingleCylinderPulseDspOptions {
   readonly sampleRate: number;
-  /** Linear pre-limiter gain. Kept deliberately low for initial playback. */
+  /** Linear drive into the final bounded soft saturator. */
   readonly outputGain?: number;
   /** One-pole DC blocker corner frequency. */
   readonly dcBlockerHz?: number;
@@ -39,7 +39,10 @@ export interface OfflinePulseBlock {
   readonly muted?: boolean;
 }
 
-const DEFAULT_GAIN = 0.18;
+const DEFAULT_GAIN = 20;
+const MAX_OUTPUT_GAIN = DEFAULT_GAIN;
+const OUTPUT_MAKEUP_GAIN = 5;
+const FINAL_OUTPUT_GAIN = 0.8;
 const DEFAULT_DC_BLOCKER_HZ = 18;
 const DEFAULT_MAX_ACTIVE_PULSES = 256;
 const DEFAULT_MAX_EVENTS_PER_BLOCK = 512;
@@ -77,6 +80,10 @@ export class SingleCylinderPulseDsp {
   private triggeredPulseCount = 0;
   private previousInput = 0;
   private previousDcOutput = 0;
+  private previousSaturatedInput = 0;
+  private previousOutput = 0;
+  private previousLimitedInput = 0;
+  private previousFinalOutput = 0;
   private fault: DspFaultState = { faulted: false, reason: null };
 
   public constructor(options: SingleCylinderPulseDspOptions) {
@@ -87,8 +94,10 @@ export class SingleCylinderPulseDsp {
       options.maxActivePulses ?? DEFAULT_MAX_ACTIVE_PULSES;
     const maxEventsPerBlock =
       options.maxEventsPerBlock ?? DEFAULT_MAX_EVENTS_PER_BLOCK;
-    if (!finite(outputGain) || outputGain < 0 || outputGain > 1) {
-      throw new RangeError("outputGain must be finite and in [0, 1]");
+    if (!finite(outputGain) || outputGain < 0 || outputGain > MAX_OUTPUT_GAIN) {
+      throw new RangeError(
+        `outputGain must be finite and in [0, ${MAX_OUTPUT_GAIN}]`,
+      );
     }
     if (
       !finite(dcBlockerHz) ||
@@ -155,6 +164,10 @@ export class SingleCylinderPulseDsp {
     this.triggeredPulseCount = 0;
     this.previousInput = 0;
     this.previousDcOutput = 0;
+    this.previousSaturatedInput = 0;
+    this.previousOutput = 0;
+    this.previousLimitedInput = 0;
+    this.previousFinalOutput = 0;
     this.fault = { faulted: false, reason: null };
   }
 
@@ -190,16 +203,8 @@ export class SingleCylinderPulseDsp {
         eventCursor += 1;
       }
 
-      const raw = this.sumAndAdvancePulses();
-      const dc =
-        raw - this.previousInput + this.dcCoefficient * this.previousDcOutput;
-      this.previousInput = raw;
-      this.previousDcOutput = dc;
-      // This smooth saturator is a final absolute peak guarantee, not a gain
-      // substitute: |x / (1 + |x|)| is always strictly below one.
-      const protectedSample =
-        (dc * this.outputGain) / (1 + Math.abs(dc * this.outputGain));
-      if (!finite(raw) || !finite(dc) || !finite(protectedSample)) {
+      const protectedSample = this.protectSample(this.sumAndAdvancePulses());
+      if (!finite(protectedSample)) {
         this.trip(output, "non-finite signal");
         return;
       }
@@ -260,14 +265,8 @@ export class SingleCylinderPulseDsp {
         }
         eventCursor += 1;
       }
-      const raw = this.sumAndAdvancePulses();
-      const dc =
-        raw - this.previousInput + this.dcCoefficient * this.previousDcOutput;
-      this.previousInput = raw;
-      this.previousDcOutput = dc;
-      const protectedSample =
-        (dc * this.outputGain) / (1 + Math.abs(dc * this.outputGain));
-      if (!finite(raw) || !finite(dc) || !finite(protectedSample)) {
+      const protectedSample = this.protectSample(this.sumAndAdvancePulses());
+      if (!finite(protectedSample)) {
         this.trip(output, "non-finite signal");
         return;
       }
@@ -337,6 +336,42 @@ export class SingleCylinderPulseDsp {
       : (load[load.length === 1 ? 0 : frame] as number);
   }
 
+  /** Allocation-free mastering and output protection shared by both render paths. */
+  private protectSample(raw: number): number {
+    const dc =
+      raw - this.previousInput + this.dcCoefficient * this.previousDcOutput;
+    if (!finite(raw) || !finite(dc)) return Number.NaN;
+    this.previousInput = raw;
+    this.previousDcOutput = dc;
+
+    // Drive the combustion transient into a bounded tone saturator. Each
+    // nonlinear stage is AC-coupled afterward so louder calibration cannot
+    // turn waveform asymmetry into a persistent DC offset.
+    const driven = dc * this.outputGain;
+    const saturated = driven / (1 + Math.abs(driven));
+    const acOutput =
+      saturated -
+      this.previousSaturatedInput +
+      this.dcCoefficient * this.previousOutput;
+    if (!finite(saturated) || !finite(acOutput)) return Number.NaN;
+    this.previousSaturatedInput = saturated;
+    this.previousOutput = acOutput;
+
+    // The mastering stage supplies the requested 20%-to-100% scale-up. tanh
+    // limits it smoothly; the final 0.8 headroom prevents the following DC
+    // blocker's small transient overshoot from requiring hard clipping.
+    const limited = Math.tanh(acOutput * OUTPUT_MAKEUP_GAIN);
+    const finalAcOutput =
+      limited -
+      this.previousLimitedInput +
+      this.dcCoefficient * this.previousFinalOutput;
+    if (!finite(limited) || !finite(finalAcOutput)) return Number.NaN;
+    this.previousLimitedInput = limited;
+    this.previousFinalOutput = finalAcOutput;
+
+    return Math.max(-1, Math.min(1, finalAcOutput * FINAL_OUTPUT_GAIN));
+  }
+
   private startPulse(sampleOffset: number, load: number): boolean {
     if (this.activePulseCount >= this.maxActivePulses) return false;
     // x² exp(-2x) has a continuous value and slope at ignition and a bounded,
@@ -378,6 +413,10 @@ export class SingleCylinderPulseDsp {
     this.activePulseCount = 0;
     this.previousInput = 0;
     this.previousDcOutput = 0;
+    this.previousSaturatedInput = 0;
+    this.previousOutput = 0;
+    this.previousLimitedInput = 0;
+    this.previousFinalOutput = 0;
     output.fill(0);
   }
 }
