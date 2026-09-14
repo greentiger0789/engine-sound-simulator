@@ -3,7 +3,7 @@ import type { FiringEvent } from "../../engine/events";
 /** Configuration for the procedural combustion-pulse renderer. */
 export interface SingleCylinderPulseDspOptions {
   readonly sampleRate: number;
-  /** Linear pre-limiter gain. Kept deliberately low for initial playback. */
+  /** Linear drive into the final bounded soft saturator. */
   readonly outputGain?: number;
   /** One-pole DC blocker corner frequency. */
   readonly dcBlockerHz?: number;
@@ -39,7 +39,8 @@ export interface OfflinePulseBlock {
   readonly muted?: boolean;
 }
 
-const DEFAULT_GAIN = 0.18;
+const DEFAULT_GAIN = 4;
+const MAX_OUTPUT_GAIN = DEFAULT_GAIN;
 const DEFAULT_DC_BLOCKER_HZ = 18;
 const DEFAULT_MAX_ACTIVE_PULSES = 256;
 const DEFAULT_MAX_EVENTS_PER_BLOCK = 512;
@@ -87,8 +88,10 @@ export class SingleCylinderPulseDsp {
       options.maxActivePulses ?? DEFAULT_MAX_ACTIVE_PULSES;
     const maxEventsPerBlock =
       options.maxEventsPerBlock ?? DEFAULT_MAX_EVENTS_PER_BLOCK;
-    if (!finite(outputGain) || outputGain < 0 || outputGain > 1) {
-      throw new RangeError("outputGain must be finite and in [0, 1]");
+    if (!finite(outputGain) || outputGain < 0 || outputGain > MAX_OUTPUT_GAIN) {
+      throw new RangeError(
+        `outputGain must be finite and in [0, ${MAX_OUTPUT_GAIN}]`,
+      );
     }
     if (
       !finite(dcBlockerHz) ||

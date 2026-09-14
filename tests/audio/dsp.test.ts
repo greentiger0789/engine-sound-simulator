@@ -77,6 +77,21 @@ function blocksFor(
 }
 
 describe("SingleCylinderPulseDsp", () => {
+  it("accepts only finite pre-saturator drive through the calibrated maximum", () => {
+    expect(
+      () =>
+        new SingleCylinderPulseDsp({
+          sampleRate: 44_100,
+          outputGain: 4,
+        }),
+    ).not.toThrow();
+    for (const outputGain of [-1, 4.000_001, Number.POSITIVE_INFINITY]) {
+      expect(
+        () => new SingleCylinderPulseDsp({ sampleRate: 44_100, outputGain }),
+      ).toThrow("outputGain must be finite and in [0, 4]");
+    }
+  });
+
   it.each([44_100, 48_000])(
     "renders finite protected idle, mid, WOT, and abrupt-load waveforms at %d Hz",
     (sampleRate) => {

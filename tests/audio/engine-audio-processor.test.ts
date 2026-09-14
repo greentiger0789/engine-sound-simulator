@@ -211,8 +211,8 @@ describe("EngineAudioProcessor", () => {
     );
   });
 
-  it("applies the gain AudioParam as an exact post-protection PCM scale", async () => {
-    vi.stubGlobal("sampleRate", 48000);
+  it("emits calibrated finite PCM at 44100 Hz and applies post-protection gain", async () => {
+    vi.stubGlobal("sampleRate", 44100);
     await import("../../src/audio/worklets/engine-audio-processor");
     const low = new registeredProcessor!(options("low-gain"));
     const high = new registeredProcessor!(options("high-gain"));
@@ -247,8 +247,11 @@ describe("EngineAudioProcessor", () => {
       }
     }
     const ratio = 1 / 0.15;
+    const highRms = Math.sqrt(highEnergy / (framesPerBlock * blockCount));
     expect(lowPeak).toBeGreaterThan(0);
+    expect(highPeak).toBeGreaterThan(0.2);
     expect(highPeak).toBeLessThanOrEqual(1);
+    expect(highRms).toBeGreaterThan(0.08);
     expect(highPeak / lowPeak).toBeCloseTo(ratio, 5);
     expect(Math.sqrt(highEnergy / lowEnergy)).toBeCloseTo(ratio, 5);
   });
