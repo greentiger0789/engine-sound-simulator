@@ -118,6 +118,21 @@ button:disabled {
   min-width: 0;
 }
 
+.number-control {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 0 1 16rem;
+}
+
+.number-control input {
+  width: 5rem;
+}
+
+.hold-throttle {
+  flex: 0 0 auto;
+}
+
 .mute-control {
   display: flex;
   gap: 0.5rem;

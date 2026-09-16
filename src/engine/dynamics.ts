@@ -31,6 +31,8 @@ export function radPerSecondToRpm(radPerSecond: number): number {
 export interface RotationalDynamicsOptions {
   /** Time constant of the effective intake opening. Defaults to 80 ms. */
   readonly intakeLagSeconds?: number;
+  /** Time constant of the effective external load. Defaults to 50 ms. */
+  readonly loadLagSeconds?: number;
   /** Constant resisting torque. Defaults to 1.5 N m. */
   readonly frictionTorqueNm?: number;
   /** Viscous resistance, in N m per rad/s. Defaults to 0.02. */
@@ -49,12 +51,15 @@ export interface DynamicsState {
   readonly rpm: number;
   readonly angularVelocityRadPerSec: number;
   readonly effectiveThrottle: number;
+  /** Smoothed resisting torque currently applied by the dynamometer. */
+  readonly effectiveLoadTorqueNm: number;
   /** The bounded multiplier currently applied to combustion drive torque. */
   readonly driveTorqueMultiplier: number;
 }
 
 interface ValidatedOptions {
   readonly intakeLagSeconds: number;
+  readonly loadLagSeconds: number;
   readonly frictionTorqueNm: number;
   readonly viscousFrictionNmPerRadPerSec: number;
   readonly idleGainNmPerRadPerSec: number;
@@ -63,6 +68,7 @@ interface ValidatedOptions {
 
 const DEFAULTS: ValidatedOptions = {
   intakeLagSeconds: 0.08,
+  loadLagSeconds: 0.05,
   frictionTorqueNm: 1.5,
   viscousFrictionNmPerRadPerSec: 0.02,
   idleGainNmPerRadPerSec: 0.8,
@@ -148,7 +154,8 @@ export class RotationalDynamics {
   private angularVelocity: number;
   private effectiveThrottleValue = 0;
   private requestedThrottle = 0;
-  private loadTorque: number;
+  private effectiveLoadTorqueValue: number;
+  private requestedLoadTorque: number;
   private driveTorqueMultiplier = 1;
   private accumulatorSeconds = 0;
 
@@ -167,6 +174,12 @@ export class RotationalDynamics {
         "intakeLagSeconds",
         options.intakeLagSeconds,
         DEFAULTS.intakeLagSeconds,
+        true,
+      ),
+      loadLagSeconds: readOption(
+        "loadLagSeconds",
+        options.loadLagSeconds,
+        DEFAULTS.loadLagSeconds,
         true,
       ),
       frictionTorqueNm: readOption(
@@ -193,7 +206,13 @@ export class RotationalDynamics {
     const initialRpm = options.initialRpm ?? this.config.idleRpm;
     requireNonNegative("initialRpm", initialRpm);
     this.angularVelocity = rpmToRadPerSecond(initialRpm);
-    this.loadTorque = readOption("loadTorqueNm", options.loadTorqueNm, 0);
+    const initialLoadTorque = readOption(
+      "loadTorqueNm",
+      options.loadTorqueNm,
+      0,
+    );
+    this.requestedLoadTorque = initialLoadTorque;
+    this.effectiveLoadTorqueValue = initialLoadTorque;
   }
 
   public setThrottle(throttle: number): void {
@@ -206,7 +225,7 @@ export class RotationalDynamics {
 
   public setLoadTorque(loadTorqueNm: number): void {
     requireNonNegative("loadTorqueNm", loadTorqueNm);
-    this.loadTorque = loadTorqueNm;
+    this.requestedLoadTorque = loadTorqueNm;
   }
 
   /**
@@ -299,6 +318,13 @@ export class RotationalDynamics {
       this.effectiveThrottleValue +
       (this.requestedThrottle - this.effectiveThrottleValue) * lagCoefficient;
     requireFinite("effective throttle", nextEffectiveThrottle);
+    const loadLagCoefficient =
+      1 - Math.exp(-DYNAMICS_STEP_SECONDS / this.options.loadLagSeconds);
+    const nextEffectiveLoadTorque =
+      this.effectiveLoadTorqueValue +
+      (this.requestedLoadTorque - this.effectiveLoadTorqueValue) *
+        loadLagCoefficient;
+    requireNonNegative("effective load torque", nextEffectiveLoadTorque);
 
     const rpm = radPerSecondToRpm(this.angularVelocity);
     const driveTorque =
@@ -319,7 +345,7 @@ export class RotationalDynamics {
       this.options.viscousFrictionNmPerRadPerSec * this.angularVelocity;
     requireFinite("friction torque", frictionTorque);
     const netTorque =
-      driveTorque + idleTorque - frictionTorque - this.loadTorque;
+      driveTorque + idleTorque - frictionTorque - nextEffectiveLoadTorque;
     requireFinite("net torque", netTorque);
     const acceleration = netTorque / this.config.inertiaKgM2;
     requireFinite("angular acceleration", acceleration);
@@ -327,6 +353,7 @@ export class RotationalDynamics {
       this.angularVelocity + acceleration * DYNAMICS_STEP_SECONDS;
     requireFinite("angular velocity", nextAngularVelocity);
     this.effectiveThrottleValue = nextEffectiveThrottle;
+    this.effectiveLoadTorqueValue = nextEffectiveLoadTorque;
     this.angularVelocity = Math.max(0, nextAngularVelocity);
   }
 
@@ -336,6 +363,7 @@ export class RotationalDynamics {
       angularVelocityRadPerSec,
       rpm: radPerSecondToRpm(angularVelocityRadPerSec),
       effectiveThrottle: this.effectiveThrottleValue,
+      effectiveLoadTorqueNm: this.effectiveLoadTorqueValue,
       driveTorqueMultiplier: this.driveTorqueMultiplier,
     };
   }

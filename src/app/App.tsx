@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type CSSProperties,
@@ -9,6 +10,7 @@ import {
 
 import {
   createBrowserAudioController,
+  MAX_LOAD_TORQUE_NM,
   type AudioController,
 } from "../audio/controller";
 import type {
@@ -68,6 +70,9 @@ export function App() {
   const [validationIssues, setValidationIssues] = useState<
     readonly EngineConfigValidationIssue[]
   >([]);
+  const holdingPointerThrottle = useRef(false);
+  const holdingPointerId = useRef<number | null>(null);
+  const holdingKeyboardThrottle = useRef(false);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -91,6 +96,89 @@ export function App() {
   const stop = useCallback(() => {
     void controller.stop();
   }, [controller]);
+  const syncHoldThrottle = useCallback(() => {
+    controller.setThrottle(
+      holdingPointerThrottle.current || holdingKeyboardThrottle.current ? 1 : 0,
+    );
+  }, [controller]);
+  const holdPointerThrottle = useCallback(
+    (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      holdingPointerId.current = event.pointerId;
+      holdingPointerThrottle.current = true;
+      syncHoldThrottle();
+    },
+    [syncHoldThrottle],
+  );
+  const releasePointerThrottle = useCallback(
+    (pointerId?: number) => {
+      if (
+        !holdingPointerThrottle.current ||
+        (pointerId !== undefined && holdingPointerId.current !== pointerId)
+      )
+        return;
+      holdingPointerThrottle.current = false;
+      holdingPointerId.current = null;
+      syncHoldThrottle();
+    },
+    [syncHoldThrottle],
+  );
+  const releaseKeyboardThrottle = useCallback(() => {
+    if (!holdingKeyboardThrottle.current) return;
+    holdingKeyboardThrottle.current = false;
+    syncHoldThrottle();
+  }, [syncHoldThrottle]);
+  const releaseAllHoldThrottle = useCallback(() => {
+    if (!holdingPointerThrottle.current && !holdingKeyboardThrottle.current)
+      return;
+    holdingPointerThrottle.current = false;
+    holdingPointerId.current = null;
+    holdingKeyboardThrottle.current = false;
+    syncHoldThrottle();
+  }, [syncHoldThrottle]);
+
+  useEffect(() => {
+    const isEditingText = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target.isContentEditable
+      );
+    };
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || isEditingText(event.target)) return;
+      event.preventDefault();
+      holdingKeyboardThrottle.current = true;
+      syncHoldThrottle();
+    };
+    const keyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || !holdingKeyboardThrottle.current) return;
+      event.preventDefault();
+      releaseKeyboardThrottle();
+    };
+    window.addEventListener("keydown", keyDown);
+    window.addEventListener("keyup", keyUp);
+    const pointerUp = (event: PointerEvent) =>
+      releasePointerThrottle(event.pointerId);
+    const blur = () => releaseAllHoldThrottle();
+    window.addEventListener("pointerup", pointerUp);
+    window.addEventListener("pointercancel", pointerUp);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", keyDown);
+      window.removeEventListener("keyup", keyUp);
+      window.removeEventListener("pointerup", pointerUp);
+      window.removeEventListener("pointercancel", pointerUp);
+      window.removeEventListener("blur", blur);
+      releaseAllHoldThrottle();
+    };
+  }, [
+    releaseAllHoldThrottle,
+    releaseKeyboardThrottle,
+    releasePointerThrottle,
+    syncHoldThrottle,
+  ]);
 
   const selectPreset = useCallback((presetId: string) => {
     const preset = availablePresets.find(
@@ -206,6 +294,55 @@ export function App() {
             />
             <output htmlFor="throttle" data-testid="throttle-value">
               {Math.round(snapshot.throttle * 100)}%
+            </output>
+          </label>
+
+          <label className="number-control" htmlFor="throttle-percent">
+            <span>Opening percentage</span>
+            <input
+              id="throttle-percent"
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              inputMode="numeric"
+              value={Math.round(snapshot.throttle * 100)}
+              onChange={(event) =>
+                controller.setThrottle(Number(event.target.value) / 100)
+              }
+            />
+            <span aria-hidden="true">%</span>
+          </label>
+
+          <button
+            type="button"
+            className="hold-throttle"
+            aria-label="Hold accelerator"
+            onPointerDown={holdPointerThrottle}
+            onPointerUp={(event) => releasePointerThrottle(event.pointerId)}
+            onPointerCancel={(event) => releasePointerThrottle(event.pointerId)}
+            onLostPointerCapture={(event) =>
+              releasePointerThrottle(event.pointerId)
+            }
+          >
+            Hold accelerator (Space)
+          </button>
+
+          <label className="range-control" htmlFor="dyno-load">
+            <span>Dyno load</span>
+            <input
+              id="dyno-load"
+              type="range"
+              min="0"
+              max={MAX_LOAD_TORQUE_NM}
+              step="0.1"
+              value={snapshot.loadTorqueNm}
+              onChange={(event) =>
+                controller.setLoadTorque(Number(event.target.value))
+              }
+            />
+            <output htmlFor="dyno-load" data-testid="dyno-load-value">
+              {snapshot.loadTorqueNm.toFixed(1)} N m
             </output>
           </label>
 

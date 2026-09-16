@@ -6,7 +6,9 @@ import {
 } from "./lifecycle";
 import { resolveEngineAudioWorkletModuleUrl } from "./worklet-module-url";
 import {
+  ENGINE_AUDIO_LOAD_TORQUE_PARAM,
   ENGINE_AUDIO_PROCESSOR_NAME,
+  MAX_LOAD_TORQUE_NM,
   type EngineAudioConfig,
   type ProcessorToControllerMessage,
 } from "./worklets/contracts";
@@ -41,6 +43,8 @@ export interface AudioControllerSnapshot {
   readonly muted: boolean;
   readonly error: AudioControllerError | null;
   readonly throttle: number;
+  /** Dynamometer resisting torque in N m, bounded to [0, 40]. */
+  readonly loadTorqueNm: number;
   readonly telemetry: AudioTelemetry;
   /** Last configuration confirmed by the processor. */
   readonly activeConfig: EngineConfig;
@@ -67,6 +71,12 @@ type SnapshotListener = () => void;
 
 const FADE_SECONDS = 0.03;
 const REFERENCE_GAIN = 1;
+/**
+ * UI and AudioParam boundary for the dynamometer. The processor samples this
+ * a-rate N m value each audio frame; dynamics smooths the requested load at
+ * its 1 kHz integration boundaries.
+ */
+export { MAX_LOAD_TORQUE_NM } from "./worklets/contracts";
 const INITIAL_TELEMETRY: AudioTelemetry = {
   rpm: 0,
   effectiveThrottle: 0,
@@ -119,6 +129,7 @@ export class AudioController {
     muted: false,
     error: null,
     throttle: 0,
+    loadTorqueNm: 0,
     telemetry: INITIAL_TELEMETRY,
     activeConfig: this.activeConfig,
     pendingConfig: null,
@@ -200,6 +211,17 @@ export class AudioController {
       : 0;
     this.setSnapshot({ throttle: normalized });
     const parameter = this.node?.parameters.get("throttle");
+    if (parameter !== undefined && this.context !== null) {
+      parameter.setValueAtTime(normalized, this.context.currentTime);
+    }
+  }
+
+  setLoadTorque(loadTorqueNm: number): void {
+    const normalized = Number.isFinite(loadTorqueNm)
+      ? Math.min(MAX_LOAD_TORQUE_NM, Math.max(0, loadTorqueNm))
+      : 0;
+    this.setSnapshot({ loadTorqueNm: normalized });
+    const parameter = this.node?.parameters.get(ENGINE_AUDIO_LOAD_TORQUE_PARAM);
     if (parameter !== undefined && this.context !== null) {
       parameter.setValueAtTime(normalized, this.context.currentTime);
     }
@@ -349,6 +371,9 @@ export class AudioController {
       node.parameters
         .get("throttle")
         ?.setValueAtTime(this.snapshot.throttle, context.currentTime);
+      node.parameters
+        .get(ENGINE_AUDIO_LOAD_TORQUE_PARAM)
+        ?.setValueAtTime(this.snapshot.loadTorqueNm, context.currentTime);
       fadeGain.gain.setValueAtTime(0, context.currentTime);
       this.applyVolume();
       node.connect(fadeGain).connect(volumeGain).connect(context.destination);

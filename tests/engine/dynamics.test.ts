@@ -96,6 +96,25 @@ describe("RotationalDynamics", () => {
     expect(Number.isFinite(closed.rpm)).toBe(true);
   });
 
+  it("lowers steady RPM by applying dynamometer T_load without changing throttle", () => {
+    const unloaded = dynamics();
+    const loaded = dynamics();
+    unloaded.setThrottle(0.65);
+    loaded.setThrottle(0.65);
+    loaded.setLoadTorque(12);
+    const firstLoadedStep = loaded.advanceFrames(48, 48_000);
+    expect(firstLoadedStep.effectiveLoadTorqueNm).toBeGreaterThan(0);
+    expect(firstLoadedStep.effectiveLoadTorqueNm).toBeLessThan(12);
+    unloaded.advanceFrames(48_000 * 8, 48_000);
+    loaded.advanceFrames(48_000 * 8 - 48, 48_000);
+    expect(loaded.getState().effectiveThrottle).toBeCloseTo(
+      unloaded.getState().effectiveThrottle,
+      10,
+    );
+    expect(loaded.getState().rpm).toBeLessThan(unloaded.getState().rpm - 100);
+    expect(loaded.getState().effectiveLoadTorqueNm).toBeCloseTo(12, 8);
+  });
+
   it("uses a bounded combustion-drive multiplier without cutting idle assist", () => {
     const driven = dynamics({ initialRpm: 3000, idleGainNmPerRadPerSec: 0 });
     const cut = dynamics({ initialRpm: 3000, idleGainNmPerRadPerSec: 0 });
@@ -126,6 +145,7 @@ describe("RotationalDynamics", () => {
     const repeat48 = dynamics();
     for (const model of [direct44, split44, split48, repeat48]) {
       model.setThrottle(0.63);
+      model.setLoadTorque(8);
     }
 
     direct44.advanceFrames(oneSecond44, 44_100);
@@ -149,6 +169,8 @@ describe("RotationalDynamics", () => {
       expect(state.angularVelocityRadPerSec).toBeGreaterThanOrEqual(0);
       expect(Number.isFinite(state.rpm)).toBe(true);
       expect(Number.isFinite(state.effectiveThrottle)).toBe(true);
+      expect(state.effectiveLoadTorqueNm).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(state.effectiveLoadTorqueNm)).toBe(true);
     }
   });
 
@@ -160,6 +182,7 @@ describe("RotationalDynamics", () => {
     expect(() => model.setLoadTorque(Number.POSITIVE_INFINITY)).toThrow(
       RangeError,
     );
+    expect(() => dynamics({ loadLagSeconds: 0 })).toThrow(RangeError);
     expect(() => model.advanceFrames(-1, 48_000)).toThrow(RangeError);
     expect(() => model.advanceFrames(128, 0)).toThrow(RangeError);
     expect(() => model.advanceFrames(1, Number.MIN_VALUE)).toThrow(RangeError);
