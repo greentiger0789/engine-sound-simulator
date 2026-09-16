@@ -49,6 +49,7 @@ class FakeAudioWorkletNode {
   readonly parameters = new Map([
     ["gain", new FakeAudioParam()],
     ["throttle", new FakeAudioParam()],
+    ["loadTorqueNm", new FakeAudioParam()],
   ]);
   onprocessorerror: (() => void) | null = null;
   disconnected = false;
@@ -193,6 +194,19 @@ describe("AudioController", () => {
 
     controller.setThrottle(0.35);
     expect(throttle.calls).toContainEqual(["set", 0.35, 10]);
+  });
+
+  it("clamps dynamometer load in N m and sends it through its a-rate AudioParam", async () => {
+    const controller = new AudioController();
+    controller.setLoadTorque(100);
+    await controller.start();
+    const load =
+      FakeAudioWorkletNode.instances[0].parameters.get("loadTorqueNm")!;
+    expect(controller.getSnapshot().loadTorqueNm).toBe(40);
+    expect(load.calls).toContainEqual(["set", 40, 10]);
+
+    controller.setLoadTorque(12.5);
+    expect(load.calls).toContainEqual(["set", 12.5, 10]);
   });
 
   it("uses the calibrated reference gain while retaining the processor gain path", async () => {

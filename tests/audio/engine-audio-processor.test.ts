@@ -49,9 +49,10 @@ function render(
   frames: number,
   throttle: Float32Array,
   gain = new Float32Array([1]),
+  loadTorqueNm = new Float32Array([0]),
 ): Float32Array {
   const output = new Float32Array(frames);
-  processor.process([], [[output]], { throttle, gain });
+  processor.process([], [[output]], { throttle, gain, loadTorqueNm });
   return output;
 }
 
@@ -198,6 +199,12 @@ describe("EngineAudioProcessor", () => {
     expect(module.EngineAudioProcessor.parameterDescriptors).toEqual([
       expect.objectContaining({ name: "throttle", automationRate: "a-rate" }),
       expect.objectContaining({ name: "gain", automationRate: "a-rate" }),
+      expect.objectContaining({
+        name: "loadTorqueNm",
+        minValue: 0,
+        maxValue: 40,
+        automationRate: "a-rate",
+      }),
     ]);
     const processor = new registeredProcessor!(options());
     expect(render(processor, 32, new Float32Array([Number.NaN]))).toEqual(
@@ -209,6 +216,41 @@ describe("EngineAudioProcessor", () => {
     expect(render(processor, 32, new Float32Array([1]))).toEqual(
       new Float32Array(32),
     );
+  });
+
+  it("smooths a-rate dynamometer load at dynamics boundaries", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const unloaded = new registeredProcessor!(options("unloaded"));
+    const alternating = new registeredProcessor!(options("alternating"));
+    const loaded = new registeredProcessor!(options("loaded"));
+    const aRateLoad = Float32Array.from({ length: 256 }, (_, frame) =>
+      frame < 128 ? 0 : 40,
+    );
+    for (let block = 0; block < 300; block += 1) {
+      render(unloaded, 256, new Float32Array([1]));
+      render(
+        alternating,
+        256,
+        new Float32Array([1]),
+        new Float32Array([1]),
+        aRateLoad,
+      );
+      render(
+        loaded,
+        256,
+        new Float32Array([1]),
+        new Float32Array([1]),
+        new Float32Array([40]),
+      );
+    }
+    const rpm = (processor: ProcessorInstance) =>
+      (
+        processor as unknown as { runtime: { dynamics: { getRpm(): number } } }
+      ).runtime.dynamics.getRpm();
+    expect(rpm(alternating)).toBeLessThan(rpm(unloaded) - 100);
+    expect(rpm(alternating)).toBeGreaterThan(rpm(loaded) + 100);
+    expect(rpm(loaded)).toBeLessThan(rpm(unloaded) - 100);
   });
 
   it("emits calibrated finite PCM at 44100 Hz and applies post-protection gain", async () => {
