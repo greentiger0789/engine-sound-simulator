@@ -114,6 +114,16 @@ export class CrankPhaseIntegrator {
     return copy;
   }
 
+  /** Reuses an existing integrator as an allocation-free realtime state copy. */
+  public copyRealtimeStateFrom(source: CrankPhaseIntegrator): void {
+    if (source.cycleDegrees !== this.cycleDegrees) {
+      throw new RangeError("cycleDegrees must match when copying phase state");
+    }
+    this.phaseDegrees = source.phaseDegrees;
+    this.cycleIndex = source.cycleIndex;
+    this.phaseCompensationDegrees = source.phaseCompensationDegrees;
+  }
+
   /** Advances exactly one sample and returns its angular interval `[previous,next)`. */
   public advance(
     angularVelocityRadPerSec: number,

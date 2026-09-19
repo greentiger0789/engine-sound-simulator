@@ -8,7 +8,11 @@ import type {
   EngineAudioProcessorOptions,
   ProcessorToControllerMessage,
 } from "./contracts";
-import { ENGINE_AUDIO_PROCESSOR_NAME } from "./contracts";
+import {
+  ENGINE_AUDIO_LOAD_TORQUE_PARAM,
+  ENGINE_AUDIO_PROCESSOR_NAME,
+  MAX_LOAD_TORQUE_NM,
+} from "./contracts";
 
 const TELEMETRY_HZ = 30;
 const LIMITER_ENGAGE_RATIO = 0.985;
@@ -23,14 +27,7 @@ interface EngineRuntime {
   readonly dsp: SingleCylinderPulseDsp;
 }
 
-function finiteUnit(name: string, value: number): number {
-  if (!Number.isFinite(value) || value < 0 || value > 1) {
-    throw new RangeError(`${name} must be finite and in [0, 1]`);
-  }
-  return value;
-}
-
-/** Audio-time integration of a validated single-cylinder engine snapshot. */
+/** Audio-time integration of a validated one-to-four-cylinder snapshot. */
 export class EngineAudioProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
@@ -46,6 +43,13 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         defaultValue: 1,
         minValue: 0,
         maxValue: 1,
+        automationRate: "a-rate" as const,
+      },
+      {
+        name: ENGINE_AUDIO_LOAD_TORQUE_PARAM,
+        defaultValue: 0,
+        minValue: 0,
+        maxValue: MAX_LOAD_TORQUE_NM,
         automationRate: "a-rate" as const,
       },
     ];
@@ -87,11 +91,21 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
     try {
       const throttle = parameters.throttle;
       const gain = parameters.gain;
+      const loadTorqueNm = parameters[ENGINE_AUDIO_LOAD_TORQUE_PARAM];
       const runtime = this.runtime;
       const blockStartFrame = this.framesRendered;
       for (let frame = 0; frame < frameCount; frame += 1) {
         runtime.dynamics.setThrottle(
           this.paramAt("throttle", throttle, frame, 0),
+        );
+        runtime.dynamics.setLoadTorque(
+          this.paramAt(
+            ENGINE_AUDIO_LOAD_TORQUE_PARAM,
+            loadTorqueNm,
+            frame,
+            0,
+            MAX_LOAD_TORQUE_NM,
+          ),
         );
         runtime.dynamics.advanceRealtimeFrame(sampleRate);
         const rpm = runtime.dynamics.getRpm();
@@ -165,7 +179,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         throw new RangeError("requestId must be a non-empty string");
       if (!Number.isSafeInteger(config?.version) || config.version < 1)
         throw new RangeError("config version must be a positive safe integer");
-      const parsed = parseEngineConfig(config.snapshot, { maxCylinders: 1 });
+      const parsed = parseEngineConfig(config.snapshot, { maxCylinders: 4 });
       if (!parsed.ok)
         throw new RangeError(
           parsed.issues
@@ -235,12 +249,14 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
     values: Float32Array | undefined,
     frame: number,
     fallback: number,
+    maximum = 1,
   ): number {
     if (values === undefined || values.length === 0) return fallback;
-    return finiteUnit(
-      name,
-      values[values.length === 1 ? 0 : frame] ?? fallback,
-    );
+    const value = values[values.length === 1 ? 0 : frame] ?? fallback;
+    if (!Number.isFinite(value) || value < 0 || value > maximum) {
+      throw new RangeError(`${name} must be finite and in [0, ${maximum}]`);
+    }
+    return value;
   }
 
   private postTelemetry(

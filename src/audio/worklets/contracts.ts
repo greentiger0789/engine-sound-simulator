@@ -3,6 +3,10 @@ import type { EngineConfig } from "../../engine/config";
 /** The stable name used by the main thread when it creates AudioWorkletNode. */
 export const ENGINE_AUDIO_PROCESSOR_NAME = "engine-audio-processor";
 
+/** Shared AudioParam contract for the simple dynamometer load. */
+export const ENGINE_AUDIO_LOAD_TORQUE_PARAM = "loadTorqueNm";
+export const MAX_LOAD_TORQUE_NM = 40;
+
 /** A versioned, structured-cloneable engine snapshot crossing into the worklet. */
 export interface EngineAudioConfig {
   readonly version: number;

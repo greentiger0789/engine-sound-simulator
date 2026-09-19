@@ -77,6 +77,21 @@ function blocksFor(
 }
 
 describe("SingleCylinderPulseDsp", () => {
+  it("accepts only finite pre-saturator drive through the calibrated maximum", () => {
+    expect(
+      () =>
+        new SingleCylinderPulseDsp({
+          sampleRate: 44_100,
+          outputGain: 20,
+        }),
+    ).not.toThrow();
+    for (const outputGain of [-1, 20.000_001, Number.POSITIVE_INFINITY]) {
+      expect(
+        () => new SingleCylinderPulseDsp({ sampleRate: 44_100, outputGain }),
+      ).toThrow("outputGain must be finite and in [0, 20]");
+    }
+  });
+
   it.each([44_100, 48_000])(
     "renders finite protected idle, mid, WOT, and abrupt-load waveforms at %d Hz",
     (sampleRate) => {
@@ -204,6 +219,22 @@ describe("SingleCylinderPulseDsp", () => {
     expect([...afterFault]).toEqual(new Array(16).fill(0));
   });
 
+  it("faults to silence when recursive mastering state becomes non-finite", () => {
+    const dsp = new SingleCylinderPulseDsp({ sampleRate: 44_100 });
+    (
+      dsp as unknown as {
+        previousFinalOutput: number;
+      }
+    ).previousFinalOutput = Number.POSITIVE_INFINITY;
+    const output = new Float32Array(32).fill(1);
+    dsp.process({ output, events: [], load: 0 });
+    expect(dsp.getFaultState()).toEqual({
+      faulted: true,
+      reason: "non-finite signal",
+    });
+    expect([...output]).toEqual(new Array(32).fill(0));
+  });
+
   it("makes higher load both louder and longer-lived", () => {
     const low = new Float32Array(1_024);
     const high = new Float32Array(1_024);
@@ -224,7 +255,6 @@ describe("SingleCylinderPulseDsp", () => {
   it("limits an accepted dense overlap without muting it", () => {
     const dsp = new SingleCylinderPulseDsp({
       sampleRate: 48_000,
-      outputGain: 1,
     });
     const output = new Float32Array(768);
     dsp.process({
@@ -237,8 +267,8 @@ describe("SingleCylinderPulseDsp", () => {
     });
     const measured = metrics(output);
     expect(dsp.getFaultState()).toEqual({ faulted: false, reason: null });
-    expect(measured.peak).toBeGreaterThan(0.9);
-    expect(measured.peak).toBeLessThanOrEqual(1);
+    expect(measured.peak).toBeGreaterThan(0.7);
+    expect(measured.peak).toBeLessThanOrEqual(0.8);
     expect(measured.rms).toBeGreaterThan(0);
   });
 

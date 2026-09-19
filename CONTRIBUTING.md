@@ -20,8 +20,9 @@ make ci
 
 `make dev` で Vite 開発サーバーを起動し、`http://localhost:5173` を
 ブラウザで開けます。`make build` はアプリと Nginx 配信 image を作成します。
-製品 UI から低音量の単気筒合成音を開始・停止し、音量、ミュート、
-アクセルを操作できます。回転・燃焼位相・燃焼パルスは AudioWorklet 内で
+製品 UI から1〜4気筒の合成音を開始・停止し、音量、ミュート、
+スライダー・数値・ホールドによるアクセル、簡易ダイノ負荷を操作できます。停止中はプリセットと720°周期の燃焼位相を編集し、
+次回開始時に安全に適用できます。回転・燃焼位相・燃焼パルスは AudioWorklet 内で
 音声時間を基準に計算し、RPM、実効開度、レブリミッター状態を UI に表示します。
 
 ## ブランチと PR
@@ -42,7 +43,7 @@ PR 本文は [PR テンプレート](.github/pull_request_template.md) を基に
 Gitleaks（コミット履歴）、ESLint、TypeScript、Vitest、Playwright による
 Chromium 検証を実行します。Playwright は開発版と Nginx 配信版の実際の
 AudioWorklet 読み込み、構成 ready handshake、RPM telemetry と製品 UI の
-開始・停止・アクセル・音量・ミュートを確認します。
+開始・停止・アクセル・簡易ダイノ負荷・音量・ミュートを確認します。
 
 GitHub Actions では、Docker layer を再利用するアプリ検証、ブラウザ E2E、リポジトリ・セキュリティ検証を並列実行します。必須ジョブ `Repository checks` は、いずれかが失敗・キャンセル・スキップされた場合も含めて結果を集約します。
 

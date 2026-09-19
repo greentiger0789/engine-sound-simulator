@@ -64,6 +64,7 @@ function compareEvents(left: FiringEvent, right: FiringEvent): number {
  */
 export class FiringEventGenerator {
   private phase: CrankPhaseIntegrator;
+  private readonly preflightPhase: CrankPhaseIntegrator;
   private readonly cylinders: readonly FiringCylinder[];
   private readonly maxEventsPerSample: number;
   private nextFrame: number;
@@ -74,6 +75,7 @@ export class FiringEventGenerator {
       options.initialPhaseDegrees,
       options.initialCycleIndex,
     );
+    this.preflightPhase = this.phase.clone();
     this.cylinders = validateCylinders(options.cylinders, options.cycleDegrees);
     const maxEventsPerSample =
       options.maxEventsPerSample ?? DEFAULT_MAX_EVENTS_PER_SAMPLE;
@@ -98,9 +100,9 @@ export class FiringEventGenerator {
 
   /**
    * Writes crossings into caller-owned typed storage without allocating event
-   * objects, phase clones, intervals, or sort buffers. It is intentionally a
-   * single-cylinder Worklet primitive; the checked public API above retains
-   * atomic multi-cylinder/offline behavior.
+   * objects, phase clones, intervals, or sort buffers. Crossings are emitted
+   * in chronological order within each frame; ties retain the validated
+   * angle/id ordering of `cylinders`.
    */
   public advanceRealtime(
     angularVelocitiesRadPerSec: Float64Array,
@@ -110,9 +112,6 @@ export class FiringEventGenerator {
     sampleIndices: Int32Array,
     sampleOffsets: Float64Array,
   ): number {
-    if (this.cylinders.length !== 1) {
-      throw new RangeError("realtime event path requires one cylinder");
-    }
     if (
       !Number.isSafeInteger(length) ||
       length < 0 ||
@@ -125,7 +124,13 @@ export class FiringEventGenerator {
     if (sampleIndices.length !== sampleOffsets.length) {
       throw new RangeError("realtime event storage lengths must match");
     }
-    const cylinder = this.cylinders[0]!;
+    this.preflightRealtimeStorage(
+      angularVelocitiesRadPerSec,
+      length,
+      sampleRate,
+      sampleIndices.length,
+    );
+
     let count = 0;
     for (let index = 0; index < length; index += 1) {
       const previousAbsoluteDegrees = this.phase.getAbsoluteDegrees();
@@ -136,36 +141,108 @@ export class FiringEventGenerator {
       const nextAbsoluteDegrees = this.phase.getAbsoluteDegrees();
       const span = nextAbsoluteDegrees - previousAbsoluteDegrees;
       if (span <= 0) continue;
-      let cycleIndex = Math.ceil(
-        (previousAbsoluteDegrees - cylinder.firingAngleDeg) /
-          this.phase.cycleDegrees,
-      );
-      while (
-        cylinder.firingAngleDeg + cycleIndex * this.phase.cycleDegrees <
-        nextAbsoluteDegrees
-      ) {
-        if (
-          count >= sampleIndices.length ||
-          count >= this.maxEventsPerSample * length
+      let previousFiring = Number.NEGATIVE_INFINITY;
+      let previousCylinderIndex = -1;
+      for (;;) {
+        let nextFiring = Number.POSITIVE_INFINITY;
+        let nextCylinderIndex = -1;
+        for (
+          let cylinderIndex = 0;
+          cylinderIndex < this.cylinders.length;
+          cylinderIndex += 1
         ) {
-          throw new RangeError("realtime event storage exceeded");
+          const cylinder = this.cylinders[cylinderIndex]!;
+          let cycleIndex = Math.ceil(
+            (previousAbsoluteDegrees - cylinder.firingAngleDeg) /
+              this.phase.cycleDegrees,
+          );
+          let firing =
+            cylinder.firingAngleDeg + cycleIndex * this.phase.cycleDegrees;
+          while (
+            firing < previousFiring ||
+            (firing === previousFiring &&
+              cylinderIndex <= previousCylinderIndex)
+          ) {
+            cycleIndex += 1;
+            firing += this.phase.cycleDegrees;
+          }
+          if (firing < nextFiring) {
+            nextFiring = firing;
+            nextCylinderIndex = cylinderIndex;
+          }
         }
-        const firing =
-          cylinder.firingAngleDeg + cycleIndex * this.phase.cycleDegrees;
+        if (nextFiring >= nextAbsoluteDegrees) break;
         sampleIndices[count] = index;
         sampleOffsets[count] = Math.max(
           0,
           Math.min(
-            (firing - previousAbsoluteDegrees) / span,
+            (nextFiring - previousAbsoluteDegrees) / span,
             1 - Number.EPSILON,
           ),
         );
         count += 1;
-        cycleIndex += 1;
+        previousFiring = nextFiring;
+        previousCylinderIndex = nextCylinderIndex;
       }
     }
     this.nextFrame = startFrame + length;
     return count;
+  }
+
+  /**
+   * Counts the exact typed-buffer requirement against scalar copies of the
+   * integrator's numeric state. This keeps storage rejection atomic without
+   * allocating a phase clone on the audio thread.
+   */
+  private preflightRealtimeStorage(
+    angularVelocitiesRadPerSec: Float64Array,
+    length: number,
+    sampleRate: number,
+    storageCapacity: number,
+  ): void {
+    requireFinite("sampleRate", sampleRate);
+    if (sampleRate <= 0)
+      throw new RangeError("sampleRate must be greater than zero");
+    const phase = this.preflightPhase;
+    phase.copyRealtimeStateFrom(this.phase);
+    const cycleDegrees = phase.cycleDegrees;
+    let required = 0;
+
+    for (let index = 0; index < length; index += 1) {
+      const velocity = angularVelocitiesRadPerSec[index]!;
+      requireFinite("angularVelocityRadPerSec", velocity);
+      if (velocity < 0)
+        throw new RangeError("angularVelocityRadPerSec must not be negative");
+      const previousAbsoluteDegrees = phase.getAbsoluteDegrees();
+      phase.advanceRealtime(velocity, sampleRate);
+      const nextAbsoluteDegrees = phase.getAbsoluteDegrees();
+
+      let eventsThisSample = 0;
+      for (
+        let cylinderIndex = 0;
+        cylinderIndex < this.cylinders.length;
+        cylinderIndex += 1
+      ) {
+        const cylinder = this.cylinders[cylinderIndex]!;
+        let firing =
+          cylinder.firingAngleDeg +
+          Math.ceil(
+            (previousAbsoluteDegrees - cylinder.firingAngleDeg) / cycleDegrees,
+          ) *
+            cycleDegrees;
+        while (firing < nextAbsoluteDegrees) {
+          eventsThisSample += 1;
+          firing += cycleDegrees;
+        }
+      }
+      if (eventsThisSample > this.maxEventsPerSample) {
+        throw new RangeError("event density exceeds maxEventsPerSample");
+      }
+      required += eventsThisSample;
+      if (required > storageCapacity) {
+        throw new RangeError("realtime event storage exceeded");
+      }
+    }
   }
 
   /**

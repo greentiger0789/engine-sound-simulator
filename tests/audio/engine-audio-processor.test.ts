@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineAudioProcessorOptions } from "../../src/audio/worklets/contracts";
 import { ENGINE_AUDIO_PROCESSOR_NAME } from "../../src/audio/worklets/contracts";
 import { singleCylinderPreset } from "../../src/presets/single-cylinder";
+import {
+  evenlySpacedTriplePreset,
+  evenlySpacedFourPreset,
+  parallelTwin360Preset,
+} from "../../src/presets/multicylinder";
 
 class FakePort {
   readonly messages: unknown[] = [];
@@ -44,9 +49,10 @@ function render(
   frames: number,
   throttle: Float32Array,
   gain = new Float32Array([1]),
+  loadTorqueNm = new Float32Array([0]),
 ): Float32Array {
   const output = new Float32Array(frames);
-  processor.process([], [[output]], { throttle, gain });
+  processor.process([], [[output]], { throttle, gain, loadTorqueNm });
   return output;
 }
 
@@ -108,6 +114,45 @@ describe("EngineAudioProcessor", () => {
     );
   });
 
+  it.each([
+    singleCylinderPreset.config,
+    parallelTwin360Preset.config,
+    evenlySpacedTriplePreset.config,
+    evenlySpacedFourPreset.config,
+  ])(
+    "accepts and freshly resets a validated multi-cylinder snapshot",
+    async (snapshot) => {
+      vi.stubGlobal("sampleRate", 48000);
+      await import("../../src/audio/worklets/engine-audio-processor");
+      const processor = new registeredProcessor!(options("one"));
+      render(processor, 256, new Float32Array([1]));
+      const internal = processor as unknown as {
+        framesRendered: number;
+        runtime: { config: { cylinders: readonly unknown[] } };
+      };
+      processor.port.onmessage?.({
+        data: {
+          type: "replace-config",
+          requestId: "replacement",
+          config: { version: 1, snapshot: structuredClone(snapshot) },
+        },
+      } as MessageEvent);
+      expect(processor.port.messages.slice(-2)).toEqual([
+        { type: "config-applied", requestId: "replacement" },
+        { type: "ready", requestId: "replacement", sampleRate: 48000 },
+      ]);
+      expect(internal.framesRendered).toBe(0);
+      expect(internal.runtime.config.cylinders).toHaveLength(
+        snapshot.cylinders.length,
+      );
+      expect(
+        [...render(processor, 127, new Float32Array([0.5]))].every(
+          Number.isFinite,
+        ),
+      ).toBe(true);
+    },
+  );
+
   it("treats scalar and a-rate throttle equivalently and accepts a mid-block opening", async () => {
     vi.stubGlobal("sampleRate", 48000);
     await import("../../src/audio/worklets/engine-audio-processor");
@@ -154,6 +199,12 @@ describe("EngineAudioProcessor", () => {
     expect(module.EngineAudioProcessor.parameterDescriptors).toEqual([
       expect.objectContaining({ name: "throttle", automationRate: "a-rate" }),
       expect.objectContaining({ name: "gain", automationRate: "a-rate" }),
+      expect.objectContaining({
+        name: "loadTorqueNm",
+        minValue: 0,
+        maxValue: 40,
+        automationRate: "a-rate",
+      }),
     ]);
     const processor = new registeredProcessor!(options());
     expect(render(processor, 32, new Float32Array([Number.NaN]))).toEqual(
@@ -165,6 +216,102 @@ describe("EngineAudioProcessor", () => {
     expect(render(processor, 32, new Float32Array([1]))).toEqual(
       new Float32Array(32),
     );
+  });
+
+  it("smooths a-rate dynamometer load at dynamics boundaries", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const unloaded = new registeredProcessor!(options("unloaded"));
+    const alternating = new registeredProcessor!(options("alternating"));
+    const loaded = new registeredProcessor!(options("loaded"));
+    const aRateLoad = Float32Array.from({ length: 256 }, (_, frame) =>
+      frame < 128 ? 0 : 40,
+    );
+    for (let block = 0; block < 300; block += 1) {
+      render(unloaded, 256, new Float32Array([1]));
+      render(
+        alternating,
+        256,
+        new Float32Array([1]),
+        new Float32Array([1]),
+        aRateLoad,
+      );
+      render(
+        loaded,
+        256,
+        new Float32Array([1]),
+        new Float32Array([1]),
+        new Float32Array([40]),
+      );
+    }
+    const rpm = (processor: ProcessorInstance) =>
+      (
+        processor as unknown as { runtime: { dynamics: { getRpm(): number } } }
+      ).runtime.dynamics.getRpm();
+    expect(rpm(alternating)).toBeLessThan(rpm(unloaded) - 100);
+    expect(rpm(alternating)).toBeGreaterThan(rpm(loaded) + 100);
+    expect(rpm(loaded)).toBeLessThan(rpm(unloaded) - 100);
+  });
+
+  it("emits calibrated finite PCM at 44100 Hz and applies post-protection gain", async () => {
+    vi.stubGlobal("sampleRate", 44100);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const low = new registeredProcessor!(options("low-gain"));
+    const high = new registeredProcessor!(options("high-gain"));
+    const idle = new registeredProcessor!(options("idle"));
+    let lowEnergy = 0;
+    let highEnergy = 0;
+    let lowPeak = 0;
+    let highPeak = 0;
+    let idleEnergy = 0;
+    let idlePeak = 0;
+    const framesPerBlock = 512;
+    const blockCount = 64;
+    for (let block = 0; block < blockCount; block += 1) {
+      const lowOutput = render(
+        low,
+        framesPerBlock,
+        new Float32Array([1]),
+        new Float32Array([0.15]),
+      );
+      const highOutput = render(
+        high,
+        framesPerBlock,
+        new Float32Array([1]),
+        new Float32Array([1]),
+      );
+      const idleOutput = render(
+        idle,
+        framesPerBlock,
+        new Float32Array([0]),
+        new Float32Array([1]),
+      );
+      for (let frame = 0; frame < framesPerBlock; frame += 1) {
+        const lowSample = lowOutput[frame]!;
+        const highSample = highOutput[frame]!;
+        const idleSample = idleOutput[frame]!;
+        expect(Number.isFinite(lowSample)).toBe(true);
+        expect(Number.isFinite(highSample)).toBe(true);
+        expect(Number.isFinite(idleSample)).toBe(true);
+        lowEnergy += lowSample * lowSample;
+        highEnergy += highSample * highSample;
+        idleEnergy += idleSample * idleSample;
+        lowPeak = Math.max(lowPeak, Math.abs(lowSample));
+        highPeak = Math.max(highPeak, Math.abs(highSample));
+        idlePeak = Math.max(idlePeak, Math.abs(idleSample));
+      }
+    }
+    const ratio = 1 / 0.15;
+    const highRms = Math.sqrt(highEnergy / (framesPerBlock * blockCount));
+    const idleRms = Math.sqrt(idleEnergy / (framesPerBlock * blockCount));
+    expect(lowPeak).toBeGreaterThan(0);
+    expect(highPeak).toBeGreaterThan(0.7);
+    expect(highPeak).toBeLessThan(1);
+    expect(highRms).toBeGreaterThan(0.35);
+    expect(idlePeak).toBeGreaterThan(0.5);
+    expect(idleRms).toBeGreaterThan(0.1);
+    expect(highPeak / lowPeak).toBeCloseTo(ratio, 5);
+    expect(Math.sqrt(highEnergy / lowEnergy)).toBeCloseTo(ratio, 5);
   });
 
   it("follows throttle up and back to idle while limiting telemetry to 30 Hz", async () => {
