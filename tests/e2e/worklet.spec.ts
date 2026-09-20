@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 type WorkletServer = "dev" | "web";
 
@@ -43,6 +43,11 @@ async function instrumentAudioGraph(
         __e2eAppCleanupCount?: number;
         __e2eProcessorConfigMutationCount?: number;
         __e2eStaleProcessorMessage?: ((event: MessageEvent) => void) | null;
+        __e2eAnalyserDisconnectCount?: number;
+        __e2eTimeDomainReadCount?: number;
+        __e2eFrequencyReadCount?: number;
+        __e2eObservedWaveformSignal?: number;
+        __e2eObservedSpectrumSignal?: number;
       };
       trackedWindow.__e2eAudioContextCount = 0;
       trackedWindow.__e2eAudioWorkletNodeCount = 0;
@@ -52,6 +57,12 @@ async function instrumentAudioGraph(
       trackedWindow.__e2eAppCleanupCount = 0;
       trackedWindow.__e2eProcessorConfigMutationCount = 0;
       trackedWindow.__e2eStaleProcessorMessage = null;
+      trackedWindow.__e2eAnalyserDisconnectCount = 0;
+      trackedWindow.__e2eTimeDomainReadCount = 0;
+      trackedWindow.__e2eFrequencyReadCount = 0;
+      trackedWindow.__e2eObservedWaveformSignal = 0;
+      trackedWindow.__e2eObservedSpectrumSignal = 0;
+
       window.addEventListener(
         "engine-simulator:app-lifecycle",
         (event: Event) => {
@@ -71,7 +82,11 @@ async function instrumentAudioGraph(
         construct(target, argumentsList, newTarget) {
           trackedWindow.__e2eAudioContextCount =
             (trackedWindow.__e2eAudioContextCount ?? 0) + 1;
-          const context = Reflect.construct(target, argumentsList, newTarget);
+          const context = Reflect.construct(
+            target,
+            argumentsList,
+            newTarget,
+          ) as AudioContext;
           const nativeAddModule = context.audioWorklet.addModule.bind(
             context.audioWorklet,
           );
@@ -138,6 +153,88 @@ async function instrumentAudioGraph(
       rejectFirstConfig: rejectFirstProcessorConfig,
     },
   );
+}
+
+async function instrumentLiveAnalyserActivity(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const trackedWindow = window as typeof window & {
+      __e2eAnalyserMethodsInstrumented?: boolean;
+      __e2eAnalyserDisconnectCount?: number;
+      __e2eTimeDomainReadCount?: number;
+      __e2eFrequencyReadCount?: number;
+      __e2eObservedWaveformSignal?: number;
+      __e2eObservedSpectrumSignal?: number;
+    };
+    if (trackedWindow.__e2eAnalyserMethodsInstrumented) return;
+    trackedWindow.__e2eAnalyserMethodsInstrumented = true;
+
+    const nativeAnalyserDisconnect = AnalyserNode.prototype.disconnect;
+    const nativeTimeDomainRead = AnalyserNode.prototype.getByteTimeDomainData;
+    const nativeFrequencyRead = AnalyserNode.prototype.getByteFrequencyData;
+    AnalyserNode.prototype.disconnect = function () {
+      trackedWindow.__e2eAnalyserDisconnectCount =
+        (trackedWindow.__e2eAnalyserDisconnectCount ?? 0) + 1;
+      Reflect.apply(nativeAnalyserDisconnect, this, []);
+    };
+    AnalyserNode.prototype.getByteTimeDomainData = function (data) {
+      trackedWindow.__e2eTimeDomainReadCount =
+        (trackedWindow.__e2eTimeDomainReadCount ?? 0) + 1;
+      nativeTimeDomainRead.call(this, data);
+      if (data.some((sample) => sample !== 128)) {
+        trackedWindow.__e2eObservedWaveformSignal = 1;
+      }
+    };
+    AnalyserNode.prototype.getByteFrequencyData = function (data) {
+      trackedWindow.__e2eFrequencyReadCount =
+        (trackedWindow.__e2eFrequencyReadCount ?? 0) + 1;
+      nativeFrequencyRead.call(this, data);
+      if (data.some((bin) => bin > 0)) {
+        trackedWindow.__e2eObservedSpectrumSignal = 1;
+      }
+    };
+  });
+}
+
+type VisualizationCounter =
+  | "__e2eAnalyserDisconnectCount"
+  | "__e2eTimeDomainReadCount"
+  | "__e2eFrequencyReadCount"
+  | "__e2eObservedWaveformSignal"
+  | "__e2eObservedSpectrumSignal";
+
+async function visualizationCount(
+  page: Page,
+  property: VisualizationCounter,
+): Promise<number> {
+  return page.evaluate((countProperty) => {
+    const trackedWindow = window as typeof window &
+      Partial<Record<VisualizationCounter, number>>;
+    return trackedWindow[countProperty] ?? 0;
+  }, property);
+}
+
+async function canvasHasDrawnSignal(canvas: Locator) {
+  return canvas.evaluate((element: HTMLCanvasElement) => {
+    const context = element.getContext("2d");
+    if (!context || element.width === 0 || element.height === 0) return false;
+    const pixels = context.getImageData(
+      0,
+      0,
+      element.width,
+      element.height,
+    ).data;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (
+        pixels[index] !== 9 ||
+        pixels[index + 1] !== 17 ||
+        pixels[index + 2] !== 31 ||
+        pixels[index + 3] !== 255
+      ) {
+        return true;
+      }
+    }
+    return false;
+  });
 }
 
 async function audioGraphCount(
@@ -339,6 +436,90 @@ test("runs the product audio controls without creating audio before the user sta
   await expect(page.getByTestId("audio-status")).toHaveText("idle");
 });
 
+test("updates analyser canvases only for the live graph and cleans up on restart", async ({
+  page,
+}) => {
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+
+  const waveform = page.getByTestId("waveform-canvas");
+  const spectrum = page.getByTestId("spectrum-canvas");
+  await expect(waveform).toBeVisible();
+  await expect(spectrum).toBeVisible();
+  expect(await visualizationCount(page, "__e2eTimeDomainReadCount")).toBe(0);
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await instrumentLiveAnalyserActivity(page);
+  await expect
+    .poll(() => visualizationCount(page, "__e2eTimeDomainReadCount"))
+    .toBeGreaterThan(2);
+  await expect
+    .poll(() => visualizationCount(page, "__e2eFrequencyReadCount"))
+    .toBeGreaterThan(2);
+  await expect
+    .poll(() => visualizationCount(page, "__e2eObservedWaveformSignal"))
+    .toBe(1);
+  await expect
+    .poll(() => visualizationCount(page, "__e2eObservedSpectrumSignal"))
+    .toBe(1);
+  await expect.poll(() => canvasHasDrawnSignal(waveform)).toBe(true);
+  await expect.poll(() => canvasHasDrawnSignal(spectrum)).toBe(true);
+
+  const initialSize = await waveform.evaluate((canvas: HTMLCanvasElement) => ({
+    width: canvas.width,
+    height: canvas.height,
+  }));
+  await page.setViewportSize({ width: 480, height: 900 });
+  await expect
+    .poll(() =>
+      waveform.evaluate((canvas: HTMLCanvasElement) => {
+        return (
+          canvas.width === Math.round(canvas.clientWidth * devicePixelRatio) &&
+          canvas.height === Math.round(canvas.clientHeight * devicePixelRatio)
+        );
+      }),
+    )
+    .toBe(true);
+  const resized = await waveform.evaluate((canvas: HTMLCanvasElement) => ({
+    width: canvas.width,
+    height: canvas.height,
+  }));
+  expect(resized).not.toEqual(initialSize);
+  expect(resized.width).toBeGreaterThan(0);
+  expect(resized.height).toBeGreaterThan(0);
+
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+  await expect
+    .poll(() => visualizationCount(page, "__e2eAnalyserDisconnectCount"))
+    .toBe(1);
+  await page.waitForTimeout(100);
+  const readsAfterStop = {
+    waveform: await visualizationCount(page, "__e2eTimeDomainReadCount"),
+    spectrum: await visualizationCount(page, "__e2eFrequencyReadCount"),
+  };
+  await page.waitForTimeout(150);
+  expect(await visualizationCount(page, "__e2eTimeDomainReadCount")).toBe(
+    readsAfterStop.waveform,
+  );
+  expect(await visualizationCount(page, "__e2eFrequencyReadCount")).toBe(
+    readsAfterStop.spectrum,
+  );
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await expect
+    .poll(() => visualizationCount(page, "__e2eTimeDomainReadCount"))
+    .toBeGreaterThan(readsAfterStop.waveform);
+
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+  await expect
+    .poll(() => visualizationCount(page, "__e2eAnalyserDisconnectCount"))
+    .toBe(2);
+});
+
 test("stages preset phase edits from the keyboard without creating audio", async ({
   page,
 }) => {
@@ -352,6 +533,10 @@ test("stages preset phase edits from the keyboard without creating audio", async
   await expect(page.getByText("燃焼位相（720°周期）")).toBeVisible();
   await expect(page.getByLabel("Cylinder 4 phase (degrees)")).toHaveValue(
     "540",
+  );
+  await expect(page.getByTestId("firing-event")).toHaveCount(1);
+  await expect(page.getByTestId("firing-event-label")).toContainText(
+    "cylinder-1: 0°",
   );
 
   await page.getByLabel("Cylinder 4 phase (degrees)").fill("720");
@@ -397,6 +582,7 @@ test("promotes a stopped four-cylinder pending configuration only after its next
   await expect(page.getByTestId("active-config")).toHaveText(
     "single-cylinder-model",
   );
+  await expect(page.getByTestId("firing-event")).toHaveCount(1);
   await expect(page.getByTestId("pending-config")).toHaveText(
     "evenly-spaced-four-model",
   );
@@ -420,11 +606,142 @@ test("promotes a stopped four-cylinder pending configuration only after its next
   await expect(page.getByTestId("pending-config")).toHaveText(
     "No pending configuration",
   );
+  await expect(page.getByTestId("firing-event")).toHaveCount(4);
+  await expect(page.getByTestId("firing-event-label").nth(0)).toContainText(
+    "evenly-spaced-four-cylinder-1",
+  );
+  await expect(page.getByTestId("firing-event-label").nth(1)).toContainText(
+    "180°",
+  );
+  await expect(page.getByTestId("firing-event-label").nth(2)).toContainText(
+    "360°",
+  );
+  await expect(page.getByTestId("firing-event-label").nth(3)).toContainText(
+    "539°",
+  );
   await expect
     .poll(() => audioGraphCount(page, "__e2eAudioContextCount"))
     .toBe(2);
   await page.getByRole("button", { name: "Stop audio" }).click();
   await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});
+
+test("keeps endpoint and near firing events readable at the supported 320px viewport", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 1_100 });
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+
+  await page
+    .getByLabel("Engine preset")
+    .selectOption("evenly-spaced-four-model");
+  await page.getByLabel("Cylinder 2 phase (degrees)").fill("72");
+  await page.getByLabel("Cylinder 3 phase (degrees)").fill("648");
+  await page.getByLabel("Cylinder 4 phase (degrees)").fill("719");
+  await page.getByRole("button", { name: "Apply for next start" }).click();
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+
+  const markers = page.getByTestId("firing-event");
+  await expect(markers).toHaveCount(4);
+  expect(
+    await markers.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-lane")),
+    ),
+  ).toEqual(["0", "1", "0", "1"]);
+
+  const layout = await page.evaluate(() => {
+    const boxes = (testId: string) =>
+      Array.from(document.querySelectorAll(`[data-testid="${testId}"]`)).map(
+        (element) => {
+          const box = element.getBoundingClientRect();
+          return {
+            left: box.left,
+            right: box.right,
+            top: box.top,
+            bottom: box.bottom,
+          };
+        },
+      );
+    const overlaps = (
+      left: ReturnType<typeof boxes>[number],
+      right: ReturnType<typeof boxes>[number],
+    ) =>
+      left.left < right.right &&
+      left.right > right.left &&
+      left.top < right.bottom &&
+      left.bottom > right.top;
+    const markerBoxes = boxes("firing-event");
+    const labelBoxes = boxes("firing-event-label");
+    const allPairsSeparate = (items: ReturnType<typeof boxes>) =>
+      items.every((item, index) =>
+        items.slice(index + 1).every((other) => !overlaps(item, other)),
+      );
+    return {
+      markerBoxes,
+      labelBoxes,
+      markersSeparate: allPairsSeparate(markerBoxes),
+      labelsSeparate: allPairsSeparate(labelBoxes),
+      viewportWidth: window.innerWidth,
+    };
+  });
+
+  expect(layout.viewportWidth).toBe(320);
+  expect(layout.markersSeparate).toBe(true);
+  expect(layout.labelsSeparate).toBe(true);
+  for (const box of [...layout.markerBoxes, ...layout.labelBoxes]) {
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(layout.viewportWidth);
+  }
+  await expect(page.getByTestId("firing-event-label")).toHaveText([
+    /evenly-spaced-four-cylinder-1: 0°/,
+    /evenly-spaced-four-cylinder-2: 72°/,
+    /evenly-spaced-four-cylinder-3: 648°/,
+    /evenly-spaced-four-cylinder-4: 719°/,
+  ]);
+
+  await page.getByRole("button", { name: "Stop audio" }).click();
+});
+
+test("renders each active parallel-twin firing order with live waveform and spectrum data", async ({
+  page,
+}) => {
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+  await instrumentLiveAnalyserActivity(page);
+
+  const twins = [
+    { id: "parallel-twin-360-model", secondAngle: "360°" },
+    { id: "parallel-twin-180-model", secondAngle: "180°" },
+    { id: "parallel-twin-270-model", secondAngle: "270°" },
+  ] as const;
+
+  for (const twin of twins) {
+    await page.getByLabel("Engine preset").selectOption(twin.id);
+    await page.getByRole("button", { name: "Apply for next start" }).click();
+    const readsBeforeStart = await visualizationCount(
+      page,
+      "__e2eFrequencyReadCount",
+    );
+
+    await page.getByRole("button", { name: "Start audio" }).click();
+    await expect(page.getByTestId("audio-status")).toHaveText("running");
+    await expect(page.getByTestId("active-config")).toHaveText(twin.id);
+    await expect(page.getByTestId("firing-event")).toHaveCount(2);
+    await expect(page.getByTestId("firing-event-label").nth(0)).toContainText(
+      "0°",
+    );
+    await expect(page.getByTestId("firing-event-label").nth(1)).toContainText(
+      twin.secondAngle,
+    );
+    await expect
+      .poll(() => visualizationCount(page, "__e2eFrequencyReadCount"))
+      .toBeGreaterThan(readsBeforeStart);
+
+    await page.getByRole("button", { name: "Stop audio" }).click();
+    await expect(page.getByTestId("audio-status")).toHaveText("idle");
+  }
 });
 
 test("preserves active configuration after a processor rejection and promotes pending on retry", async ({

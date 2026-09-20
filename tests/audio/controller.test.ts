@@ -27,14 +27,51 @@ class FakeAudioParam {
 
 class FakeGainNode {
   readonly gain = new FakeAudioParam();
+  readonly connections: unknown[] = [];
   disconnected = false;
 
   connect<T>(destination: T): T {
+    this.connections.push(destination);
     return destination;
   }
 
   disconnect(): void {
     this.disconnected = true;
+  }
+}
+
+class FakeAnalyserNode {
+  fftSize = 0;
+  smoothingTimeConstant = 0;
+  minDecibels = 0;
+  maxDecibels = 0;
+  readonly sampleRate = 48000;
+  readonly connections: unknown[] = [];
+  readonly timeDomainReads: Uint8Array<ArrayBuffer>[] = [];
+  readonly frequencyReads: Uint8Array<ArrayBuffer>[] = [];
+  disconnected = false;
+
+  get frequencyBinCount(): number {
+    return this.fftSize / 2;
+  }
+
+  connect<T>(destination: T): T {
+    this.connections.push(destination);
+    return destination;
+  }
+
+  disconnect(): void {
+    this.disconnected = true;
+  }
+
+  getByteTimeDomainData(destinationData: Uint8Array<ArrayBuffer>): void {
+    this.timeDomainReads.push(destinationData);
+    destinationData.fill(128);
+  }
+
+  getByteFrequencyData(destinationData: Uint8Array<ArrayBuffer>): void {
+    this.frequencyReads.push(destinationData);
+    destinationData.fill(64);
   }
 }
 
@@ -53,6 +90,7 @@ class FakeAudioWorkletNode {
   ]);
   onprocessorerror: (() => void) | null = null;
   disconnected = false;
+  readonly connections: unknown[] = [];
   readonly options: AudioWorkletNodeOptions | undefined;
 
   constructor(
@@ -77,6 +115,7 @@ class FakeAudioWorkletNode {
   }
 
   connect<T>(destination: T): T {
+    this.connections.push(destination);
     return destination;
   }
 
@@ -93,6 +132,8 @@ class FakeAudioContext {
   };
   readonly destination = {} as AudioDestinationNode;
   readonly gains: FakeGainNode[] = [];
+  readonly analysers: FakeAnalyserNode[] = [];
+  readonly sampleRate = 48000;
   currentTime = 10;
   state: AudioContextState = "suspended";
   onstatechange: (() => void) | null = null;
@@ -108,6 +149,12 @@ class FakeAudioContext {
     const gain = new FakeGainNode();
     this.gains.push(gain);
     return gain as unknown as GainNode;
+  }
+
+  createAnalyser(): AnalyserNode {
+    const analyser = new FakeAnalyserNode();
+    this.analysers.push(analyser);
+    return analyser as unknown as AnalyserNode;
   }
 
   async resume(): Promise<void> {
@@ -149,6 +196,47 @@ describe("AudioController", () => {
     expect(context.gains[0].gain.calls).toContainEqual(["ramp", 0, 10.03]);
     expect(context.close).toHaveBeenCalledOnce();
     expect(controller.getSnapshot().status).toBe("idle");
+  });
+
+  it("exposes one configured output-monitor analyser without inserting it into the audible path", async () => {
+    const controller = new AudioController();
+    expect(controller.getVisualizationSource()).toBeNull();
+
+    await controller.start();
+    const context = FakeAudioContext.instances[0];
+    const analyser = context.analysers[0];
+    const source = controller.getVisualizationSource();
+    expect(context.analysers).toHaveLength(1);
+    expect(source).not.toBe(analyser);
+    expect(source).toMatchObject({
+      sampleRate: 48000,
+      fftSize: 2048,
+      frequencyBinCount: 1024,
+      minDecibels: -100,
+      maxDecibels: -20,
+    });
+    const timeDomain = new Uint8Array(new ArrayBuffer(4));
+    const frequency = new Uint8Array(new ArrayBuffer(4));
+    source?.getByteTimeDomainData(timeDomain);
+    source?.getByteFrequencyData(frequency);
+    expect(analyser.timeDomainReads).toEqual([timeDomain]);
+    expect(analyser.frequencyReads).toEqual([frequency]);
+
+    const [fade, volume] = context.gains;
+    expect(FakeAudioWorkletNode.instances[0].connections).toEqual([fade]);
+    expect(fade.connections).toEqual([volume]);
+    expect(volume.connections).toEqual([context.destination, analyser]);
+    expect(analyser.connections).toEqual([]);
+
+    const stopping = controller.stop();
+    await vi.advanceTimersByTimeAsync(30);
+    await stopping;
+    expect(controller.getVisualizationSource()).toBeNull();
+    expect(analyser.disconnected).toBe(true);
+
+    await controller.start();
+    expect(FakeAudioContext.instances[1].analysers).toHaveLength(1);
+    expect(FakeAudioContext.instances[1].analysers[0]).not.toBe(analyser);
   });
 
   it("holds the instantaneous start envelope when stopped mid-fade", async () => {
@@ -297,6 +385,7 @@ describe("AudioController", () => {
     const controller = new AudioController();
     await controller.start();
     const context = FakeAudioContext.instances[0];
+    const analyser = context.analysers[0];
     FakeAudioWorkletNode.instances[0].port.onmessage?.({
       data: { type: "fatal-error", message: "non-finite output" },
     } as MessageEvent);
@@ -309,6 +398,8 @@ describe("AudioController", () => {
         recoverable: false,
       },
     });
+    expect(controller.getVisualizationSource()).toBeNull();
+    expect(analyser.disconnected).toBe(true);
     await Promise.resolve();
     expect(context.close).toHaveBeenCalledOnce();
   });

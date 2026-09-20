@@ -1,11 +1,9 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
-  type CSSProperties,
 } from "react";
 
 import {
@@ -22,6 +20,7 @@ import {
   singleCylinderPreset,
   type EnginePreset,
 } from "../presets/single-cylinder";
+import { EngineVisualizations } from "../components/EngineVisualizations";
 
 let browserAudioController: AudioController | undefined;
 
@@ -229,17 +228,6 @@ export function App() {
   const canStageConfig =
     snapshot.status === "idle" ||
     (snapshot.status === "error" && snapshot.error?.code === "config-rejected");
-  const firingOrder = useMemo(
-    () =>
-      draftConfig.cylinders
-        .map((cylinder, index) => ({
-          index: index + 1,
-          phase: phases[index] ?? String(cylinder.firingAngleDeg),
-        }))
-        .sort((left, right) => Number(left.phase) - Number(right.phase)),
-    [draftConfig.cylinders, phases],
-  );
-
   return (
     <main className="app-shell">
       <section aria-labelledby="app-title" className="controller-area">
@@ -443,22 +431,6 @@ export function App() {
             </div>
           </fieldset>
 
-          <div className="firing-order" aria-label="720 degree firing order">
-            <span>720° firing order</span>
-            <ol>
-              {firingOrder.map(({ index, phase }) => (
-                <li
-                  key={index}
-                  style={
-                    { "--phase": `${Number(phase) / 7.2}%` } as CSSProperties
-                  }
-                >
-                  C{index}: {phase}°
-                </li>
-              ))}
-            </ol>
-          </div>
-
           <button
             type="button"
             onClick={stageConfig}
@@ -467,6 +439,12 @@ export function App() {
             Apply for next start
           </button>
         </section>
+
+        <EngineVisualizations
+          controller={controller}
+          running={snapshot.status === "running"}
+          activeConfig={snapshot.activeConfig}
+        />
 
         <p className="status" aria-live="polite">
           Status: <output data-testid="audio-status">{snapshot.status}</output>
