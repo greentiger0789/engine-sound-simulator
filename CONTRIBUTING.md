@@ -24,6 +24,8 @@ make ci
 スライダー・数値・ホールドによるアクセル、簡易ダイノ負荷を操作できます。停止中はプリセットと720°周期の燃焼位相を編集し、
 次回開始時に安全に適用できます。回転・燃焼位相・燃焼パルスは AudioWorklet 内で
 音声時間を基準に計算し、RPM、実効開度、レブリミッター状態を UI に表示します。
+出力監視用 AnalyserNode から現在波形と周波数スペクトルを描画し、適用中構成の
+燃焼イベントを720°の帯で確認できます。Canvas の描画は音声 scheduling には使いません。
 
 ## ブランチと PR
 
@@ -43,7 +45,8 @@ PR 本文は [PR テンプレート](.github/pull_request_template.md) を基に
 Gitleaks（コミット履歴）、ESLint、TypeScript、Vitest、Playwright による
 Chromium 検証を実行します。Playwright は開発版と Nginx 配信版の実際の
 AudioWorklet 読み込み、構成 ready handshake、RPM telemetry と製品 UI の
-開始・停止・アクセル・簡易ダイノ負荷・音量・ミュートを確認します。
+開始・停止・アクセル・簡易ダイノ負荷・音量・ミュートに加えて、燃焼列と
+analyser可視化の開始・停止・再作成を確認します。
 
 GitHub Actions では、Docker layer を再利用するアプリ検証、ブラウザ E2E、リポジトリ・セキュリティ検証を並列実行します。必須ジョブ `Repository checks` は、いずれかが失敗・キャンセル・スキップされた場合も含めて結果を集約します。
 

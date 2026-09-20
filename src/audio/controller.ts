@@ -67,10 +67,28 @@ export interface AudioTelemetry {
   readonly limiterActive: boolean;
 }
 
+/**
+ * Read-only audio data source for rendering output visualizations. The
+ * controller owns its lifetime; consumers must not connect or disconnect it.
+ */
+export interface AudioVisualizationSource {
+  readonly sampleRate: number;
+  readonly fftSize: number;
+  readonly frequencyBinCount: number;
+  readonly minDecibels: number;
+  readonly maxDecibels: number;
+  getByteTimeDomainData(destinationData: Uint8Array<ArrayBuffer>): void;
+  getByteFrequencyData(destinationData: Uint8Array<ArrayBuffer>): void;
+}
+
 type SnapshotListener = () => void;
 
 const FADE_SECONDS = 0.03;
 const REFERENCE_GAIN = 1;
+const VISUALIZATION_FFT_SIZE = 2048;
+const VISUALIZATION_SMOOTHING_TIME_CONSTANT = 0.75;
+const VISUALIZATION_MIN_DECIBELS = -100;
+const VISUALIZATION_MAX_DECIBELS = -20;
 /**
  * UI and AudioParam boundary for the dynamometer. The processor samples this
  * a-rate N m value each audio frame; dynamics smooths the requested load at
@@ -109,6 +127,8 @@ export class AudioController {
   private node: AudioWorkletNode | null = null;
   private fadeGain: GainNode | null = null;
   private volumeGain: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
+  private visualizationSource: AudioVisualizationSource | null = null;
   private startPromise: Promise<void> | null = null;
   private stopPromise: Promise<void> | null = null;
   private teardownPromise: Promise<void> | null = null;
@@ -137,6 +157,11 @@ export class AudioController {
 
   getSnapshot(): AudioControllerSnapshot {
     return this.snapshot;
+  }
+
+  /** Returns the current output-monitor tap, or null when no graph is live. */
+  getVisualizationSource(): AudioVisualizationSource | null {
+    return this.visualizationSource;
   }
 
   subscribe(listener: SnapshotListener): () => void {
@@ -356,9 +381,37 @@ export class AudioController {
       });
       const fadeGain = context.createGain();
       const volumeGain = context.createGain();
+      const analyser = context.createAnalyser();
+      analyser.fftSize = VISUALIZATION_FFT_SIZE;
+      analyser.smoothingTimeConstant = VISUALIZATION_SMOOTHING_TIME_CONSTANT;
+      analyser.minDecibels = VISUALIZATION_MIN_DECIBELS;
+      analyser.maxDecibels = VISUALIZATION_MAX_DECIBELS;
+      const visualizationSource: AudioVisualizationSource = {
+        sampleRate: context.sampleRate,
+        get fftSize() {
+          return analyser.fftSize;
+        },
+        get frequencyBinCount() {
+          return analyser.frequencyBinCount;
+        },
+        get minDecibels() {
+          return analyser.minDecibels;
+        },
+        get maxDecibels() {
+          return analyser.maxDecibels;
+        },
+        getByteTimeDomainData(destinationData) {
+          analyser.getByteTimeDomainData(destinationData);
+        },
+        getByteFrequencyData(destinationData) {
+          analyser.getByteFrequencyData(destinationData);
+        },
+      };
       this.node = node;
       this.fadeGain = fadeGain;
       this.volumeGain = volumeGain;
+      this.analyser = analyser;
+      this.visualizationSource = visualizationSource;
       this.processorReady = false;
       this.configApplied = false;
       this.activeRequestId = requestId;
@@ -377,6 +430,9 @@ export class AudioController {
       fadeGain.gain.setValueAtTime(0, context.currentTime);
       this.applyVolume();
       node.connect(fadeGain).connect(volumeGain).connect(context.destination);
+      // This is a tap, not part of the audible signal path. An AnalyserNode
+      // does not need a destination connection to expose output data.
+      volumeGain.connect(analyser);
 
       await context.resume();
       if (this.disposed || this.stopRequested) {
@@ -385,12 +441,15 @@ export class AudioController {
       }
       // Remain silent until this exact initialization request is acknowledged.
     } catch (error: unknown) {
+      // Detach any partially constructed graph before publishing the error so
+      // renderers cannot retain a stale visualization source.
+      const teardown = this.teardown();
       this.fail(
         "start-failed",
         error instanceof Error ? error.message : "Audio could not be started.",
         true,
       );
-      await this.teardown();
+      await teardown;
     }
   }
 
@@ -558,10 +617,13 @@ export class AudioController {
     const node = this.node;
     const fadeGain = this.fadeGain;
     const volumeGain = this.volumeGain;
+    const analyser = this.analyser;
     this.context = null;
     this.node = null;
     this.fadeGain = null;
     this.volumeGain = null;
+    this.analyser = null;
+    this.visualizationSource = null;
     this.fadeState = null;
     this.processorReady = false;
     this.configApplied = false;
@@ -574,6 +636,7 @@ export class AudioController {
     }
     fadeGain?.disconnect();
     volumeGain?.disconnect();
+    analyser?.disconnect();
     if (context !== null) {
       context.onstatechange = null;
       if (context.state !== "closed") {
