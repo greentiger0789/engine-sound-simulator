@@ -1,4 +1,6 @@
 import { SingleCylinderPulseDsp } from "../dsp/single-cylinder-pulse";
+import { ExhaustResonatorDsp } from "../dsp/exhaust-resonator";
+import { IntakePathDsp } from "../dsp/intake-path";
 import { parseEngineConfig, type EngineConfig } from "../../engine/config";
 import { RotationalDynamics } from "../../engine/dynamics";
 import { FiringEventGenerator } from "../../engine/events";
@@ -19,12 +21,15 @@ const LIMITER_ENGAGE_RATIO = 0.985;
 const LIMITER_RELEASE_RATIO = 0.965;
 const MAX_BLOCK_FRAMES = 4_096;
 const MAX_EVENTS_PER_BLOCK = 512;
+const TONE_MAKEUP_GAIN = 1.2;
 
 interface EngineRuntime {
   readonly config: EngineConfig;
   readonly dynamics: RotationalDynamics;
   readonly events: FiringEventGenerator;
   readonly dsp: SingleCylinderPulseDsp;
+  readonly exhaust: ExhaustResonatorDsp;
+  readonly intake: IntakePathDsp;
 }
 
 /** Audio-time integration of a validated one-to-four-cylinder snapshot. */
@@ -62,8 +67,11 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
   private faulted = false;
   private readonly angularVelocity = new Float64Array(MAX_BLOCK_FRAMES);
   private readonly effectiveThrottle = new Float64Array(MAX_BLOCK_FRAMES);
+  private readonly normalizedLoad = new Float64Array(MAX_BLOCK_FRAMES);
   private readonly limiterMask = new Uint8Array(MAX_BLOCK_FRAMES);
   private readonly rendered = new Float32Array(MAX_BLOCK_FRAMES);
+  private readonly exhaustRendered = new Float32Array(MAX_BLOCK_FRAMES);
+  private readonly intakeRendered = new Float32Array(MAX_BLOCK_FRAMES);
   private readonly eventSampleIndices = new Int32Array(MAX_EVENTS_PER_BLOCK);
   private readonly eventSampleOffsets = new Float64Array(MAX_EVENTS_PER_BLOCK);
 
@@ -98,15 +106,15 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         runtime.dynamics.setThrottle(
           this.paramAt("throttle", throttle, frame, 0),
         );
-        runtime.dynamics.setLoadTorque(
-          this.paramAt(
-            ENGINE_AUDIO_LOAD_TORQUE_PARAM,
-            loadTorqueNm,
-            frame,
-            0,
-            MAX_LOAD_TORQUE_NM,
-          ),
+        const frameLoadTorque = this.paramAt(
+          ENGINE_AUDIO_LOAD_TORQUE_PARAM,
+          loadTorqueNm,
+          frame,
+          0,
+          MAX_LOAD_TORQUE_NM,
         );
+        runtime.dynamics.setLoadTorque(frameLoadTorque);
+        this.normalizedLoad[frame] = frameLoadTorque / MAX_LOAD_TORQUE_NM;
         runtime.dynamics.advanceRealtimeFrame(sampleRate);
         const rpm = runtime.dynamics.getRpm();
         this.angularVelocity[frame] =
@@ -147,9 +155,23 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         this.effectiveThrottle,
       );
       if (runtime.dsp.isFaulted()) throw new RangeError("DSP fault");
+      runtime.exhaust.processRealtime(
+        this.rendered,
+        this.exhaustRendered,
+        frameCount,
+      );
+      runtime.intake.processRealtime(
+        this.intakeRendered,
+        frameCount,
+        this.effectiveThrottle,
+        this.normalizedLoad,
+      );
       for (let frame = 0; frame < frameCount; frame += 1) {
-        const sample =
-          this.rendered[frame]! * this.paramAt("gain", gain, frame, 1);
+        const tone = this.protectTone(
+          TONE_MAKEUP_GAIN *
+            (this.exhaustRendered[frame]! + this.intakeRendered[frame]!),
+        );
+        const sample = tone * this.paramAt("gain", gain, frame, 1);
         if (!Number.isFinite(sample)) throw new RangeError("non-finite output");
         for (let busIndex = 0; busIndex < outputs.length; busIndex += 1) {
           const bus = outputs[busIndex]!;
@@ -195,6 +217,14 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
           cylinders: snapshot.cylinders,
         }),
         dsp: new SingleCylinderPulseDsp({ sampleRate }),
+        exhaust: new ExhaustResonatorDsp({
+          sampleRate,
+          exhaust: snapshot.exhaust,
+        }),
+        intake: new IntakePathDsp({
+          sampleRate,
+          config: snapshot.intake,
+        }),
       };
       this.framesRendered = 0;
       this.telemetryFrameRemainder = 0;
@@ -230,6 +260,16 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
     )
       this.limiterActive = !this.limiterActive;
     runtime.dynamics.setDriveTorqueMultiplier(this.limiterActive ? 0 : 1);
+  }
+
+  /** Smooth final knee after combustion resonance and additive intake tone. */
+  private protectTone(sample: number): number {
+    if (!Number.isFinite(sample))
+      throw new RangeError("non-finite tone output");
+    const magnitude = Math.abs(sample);
+    if (magnitude <= 0.8) return sample;
+    const limited = 0.8 + 0.199 * (1 - Math.exp(-(magnitude - 0.8) / 0.2));
+    return Math.sign(sample) * limited;
   }
 
   private removeLimitedEvents(eventCount: number): number {
