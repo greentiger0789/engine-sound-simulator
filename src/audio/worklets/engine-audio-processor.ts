@@ -1,6 +1,7 @@
 import { SingleCylinderPulseDsp } from "../dsp/single-cylinder-pulse";
 import { ExhaustResonatorDsp } from "../dsp/exhaust-resonator";
 import { IntakePathDsp } from "../dsp/intake-path";
+import { MechanicalOrdersDsp } from "../dsp/mechanical-orders";
 import { parseEngineConfig, type EngineConfig } from "../../engine/config";
 import { RotationalDynamics } from "../../engine/dynamics";
 import { FiringEventGenerator } from "../../engine/events";
@@ -30,6 +31,7 @@ interface EngineRuntime {
   readonly dsp: SingleCylinderPulseDsp;
   readonly exhaust: ExhaustResonatorDsp;
   readonly intake: IntakePathDsp;
+  readonly mechanical: MechanicalOrdersDsp;
 }
 
 /** Audio-time integration of a validated one-to-four-cylinder snapshot. */
@@ -72,6 +74,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
   private readonly rendered = new Float32Array(MAX_BLOCK_FRAMES);
   private readonly exhaustRendered = new Float32Array(MAX_BLOCK_FRAMES);
   private readonly intakeRendered = new Float32Array(MAX_BLOCK_FRAMES);
+  private readonly mechanicalRendered = new Float32Array(MAX_BLOCK_FRAMES);
   private readonly eventSampleIndices = new Int32Array(MAX_EVENTS_PER_BLOCK);
   private readonly eventSampleOffsets = new Float64Array(MAX_EVENTS_PER_BLOCK);
 
@@ -166,10 +169,17 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         this.effectiveThrottle,
         this.normalizedLoad,
       );
+      runtime.mechanical.processRealtime(
+        this.mechanicalRendered,
+        frameCount,
+        this.angularVelocity,
+      );
       for (let frame = 0; frame < frameCount; frame += 1) {
         const tone = this.protectTone(
           TONE_MAKEUP_GAIN *
-            (this.exhaustRendered[frame]! + this.intakeRendered[frame]!),
+            (this.exhaustRendered[frame]! +
+              this.intakeRendered[frame]! +
+              this.mechanicalRendered[frame]!),
         );
         const sample = tone * this.paramAt("gain", gain, frame, 1);
         if (!Number.isFinite(sample)) throw new RangeError("non-finite output");
@@ -216,7 +226,10 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
           cycleDegrees: snapshot.cycleDegrees,
           cylinders: snapshot.cylinders,
         }),
-        dsp: new SingleCylinderPulseDsp({ sampleRate }),
+        dsp: new SingleCylinderPulseDsp({
+          sampleRate,
+          variation: snapshot.combustionVariation,
+        }),
         exhaust: new ExhaustResonatorDsp({
           sampleRate,
           exhaust: snapshot.exhaust,
@@ -224,6 +237,11 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         intake: new IntakePathDsp({
           sampleRate,
           config: snapshot.intake,
+        }),
+        mechanical: new MechanicalOrdersDsp({
+          sampleRate,
+          gain: snapshot.mechanical.gain,
+          orders: snapshot.mechanical.orders,
         }),
       };
       this.framesRendered = 0;

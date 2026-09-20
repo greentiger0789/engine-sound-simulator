@@ -27,6 +27,22 @@ export interface ExhaustConfig {
   readonly mufflerAmount: number;
 }
 
+export interface CombustionVariationConfig {
+  /** Reproducible uint32 seed owned by the applied engine snapshot. */
+  readonly seed: number;
+  /** Symmetric maximum pulse-amplitude variation, as a fraction. */
+  readonly amplitude: number;
+  /** Symmetric maximum pulse-width variation, as a fraction. */
+  readonly width: number;
+}
+
+export interface MechanicalConfig {
+  /** Conservative linear gain for the additive crank-order component. */
+  readonly gain: number;
+  /** Frequencies expressed as cycles per 360-degree crank revolution. */
+  readonly orders: readonly number[];
+}
+
 export interface EngineConfig {
   readonly schemaVersion: 1;
   readonly id: string;
@@ -39,6 +55,8 @@ export interface EngineConfig {
   readonly torqueCurve: readonly TorqueCurvePoint[];
   readonly intake: IntakeConfig;
   readonly exhaust: ExhaustConfig;
+  readonly combustionVariation: CombustionVariationConfig;
+  readonly mechanical: MechanicalConfig;
 }
 
 export interface EngineConfigValidationOptions {
@@ -73,7 +91,20 @@ const ROOT_KEYS = [
   "torqueCurve",
   "intake",
   "exhaust",
+  "combustionVariation",
+  "mechanical",
 ] as const;
+
+const DEFAULT_COMBUSTION_VARIATION: CombustionVariationConfig = {
+  seed: 0,
+  amplitude: 0,
+  width: 0,
+};
+const DEFAULT_MECHANICAL: MechanicalConfig = { gain: 0, orders: [1] };
+const MAX_VARIATION_FRACTION = 0.25;
+const MAX_MECHANICAL_GAIN = 0.2;
+const MAX_MECHANICAL_ORDERS = 16;
+const MAX_MECHANICAL_ORDER = 32;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -199,6 +230,11 @@ export function parseEngineConfig(
   const torqueCurve = parseTorqueCurve(root.torqueCurve, issues);
   const intake = parseIntake(root.intake, issues);
   const exhaust = parseExhaust(root.exhaust, issues);
+  const combustionVariation = parseCombustionVariation(
+    root.combustionVariation,
+    issues,
+  );
+  const mechanical = parseMechanical(root.mechanical, issues);
 
   if (
     issues.length > 0 ||
@@ -216,7 +252,9 @@ export function parseEngineConfig(
     inertiaKgM2 <= 0 ||
     !torqueCurve ||
     !intake ||
-    !exhaust
+    !exhaust ||
+    !combustionVariation ||
+    !mechanical
   ) {
     return { ok: false, issues };
   }
@@ -235,6 +273,8 @@ export function parseEngineConfig(
       torqueCurve,
       intake,
       exhaust,
+      combustionVariation,
+      mechanical,
     },
   };
 }
@@ -438,5 +478,131 @@ function parseExhaust(
     mufflerAmount >= 0 &&
     mufflerAmount <= 1
     ? { pipeLengthM, damping, mufflerAmount }
+    : undefined;
+}
+
+function parseCombustionVariation(
+  value: unknown,
+  issues: EngineConfigValidationIssue[],
+): CombustionVariationConfig | undefined {
+  if (value === undefined) return { ...DEFAULT_COMBUSTION_VARIATION };
+  const variation = readRecord(value, "$.combustionVariation", issues);
+  if (!variation) return undefined;
+  rejectUnknownKeys(
+    variation,
+    ["seed", "amplitude", "width"],
+    "$.combustionVariation",
+    issues,
+  );
+  const seed = readFiniteNumber(
+    variation.seed,
+    "$.combustionVariation.seed",
+    issues,
+  );
+  const amplitude = readFiniteNumber(
+    variation.amplitude,
+    "$.combustionVariation.amplitude",
+    issues,
+  );
+  const width = readFiniteNumber(
+    variation.width,
+    "$.combustionVariation.width",
+    issues,
+  );
+  if (
+    seed !== undefined &&
+    (!Number.isSafeInteger(seed) || seed < 0 || seed > 0xffff_ffff)
+  ) {
+    addIssue(
+      issues,
+      "$.combustionVariation.seed",
+      "must be a uint32 safe integer",
+    );
+  }
+  for (const [name, amount] of [
+    ["amplitude", amplitude],
+    ["width", width],
+  ] as const) {
+    if (
+      amount !== undefined &&
+      (amount < 0 || amount > MAX_VARIATION_FRACTION)
+    ) {
+      addIssue(
+        issues,
+        `$.combustionVariation.${name}`,
+        `must be in [0, ${MAX_VARIATION_FRACTION}]`,
+      );
+    }
+  }
+  return seed !== undefined &&
+    Number.isSafeInteger(seed) &&
+    seed >= 0 &&
+    seed <= 0xffff_ffff &&
+    amplitude !== undefined &&
+    amplitude >= 0 &&
+    amplitude <= MAX_VARIATION_FRACTION &&
+    width !== undefined &&
+    width >= 0 &&
+    width <= MAX_VARIATION_FRACTION
+    ? { seed, amplitude, width }
+    : undefined;
+}
+
+function parseMechanical(
+  value: unknown,
+  issues: EngineConfigValidationIssue[],
+): MechanicalConfig | undefined {
+  if (value === undefined)
+    return { ...DEFAULT_MECHANICAL, orders: [...DEFAULT_MECHANICAL.orders] };
+  const mechanical = readRecord(value, "$.mechanical", issues);
+  if (!mechanical) return undefined;
+  rejectUnknownKeys(mechanical, ["gain", "orders"], "$.mechanical", issues);
+  const gain = readFiniteNumber(mechanical.gain, "$.mechanical.gain", issues);
+  if (gain !== undefined && (gain < 0 || gain > MAX_MECHANICAL_GAIN)) {
+    addIssue(
+      issues,
+      "$.mechanical.gain",
+      `must be in [0, ${MAX_MECHANICAL_GAIN}]`,
+    );
+  }
+  if (!Array.isArray(mechanical.orders)) {
+    addIssue(issues, "$.mechanical.orders", "must be an array");
+    return undefined;
+  }
+  if (
+    mechanical.orders.length === 0 ||
+    mechanical.orders.length > MAX_MECHANICAL_ORDERS
+  ) {
+    addIssue(
+      issues,
+      "$.mechanical.orders",
+      `must contain 1 to ${MAX_MECHANICAL_ORDERS} values`,
+    );
+  }
+  const orders: number[] = [];
+  for (let index = 0; index < mechanical.orders.length; index += 1) {
+    const order = readFiniteNumber(
+      mechanical.orders[index],
+      `$.mechanical.orders[${index}]`,
+      issues,
+    );
+    if (order !== undefined && (order <= 0 || order > MAX_MECHANICAL_ORDER)) {
+      addIssue(
+        issues,
+        `$.mechanical.orders[${index}]`,
+        `must be in (0, ${MAX_MECHANICAL_ORDER}]`,
+      );
+    }
+    if (order !== undefined && order > 0 && order <= MAX_MECHANICAL_ORDER) {
+      orders.push(order);
+    }
+  }
+  return gain !== undefined &&
+    gain >= 0 &&
+    gain <= MAX_MECHANICAL_GAIN &&
+    orders.length === mechanical.orders.length &&
+    orders.length >= 1 &&
+    orders.length <= MAX_MECHANICAL_ORDERS
+    ? { gain, orders }
     : undefined;
 }

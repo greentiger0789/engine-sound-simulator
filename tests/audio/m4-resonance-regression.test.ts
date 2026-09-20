@@ -125,6 +125,98 @@ describe("M4 resonator product regression", () => {
     },
   );
 
+  it.each([44_100, 48_000])(
+    "keeps every variation/mechanical combination deterministic and protected at %d Hz",
+    async (runtimeSampleRate) => {
+      vi.stubGlobal("sampleRate", runtimeSampleRate);
+      await import("../../src/audio/worklets/engine-audio-processor");
+      const Processor = registeredProcessor!;
+      const base = structuredClone(singleCylinderPreset.config);
+      const combinations = [
+        {
+          name: "disabled",
+          combustionVariation: { seed: 101, amplitude: 0, width: 0 },
+          mechanical: { gain: 0, orders: [1, 2] },
+        },
+        {
+          name: "variation",
+          combustionVariation: { seed: 101, amplitude: 0.08, width: 0.05 },
+          mechanical: { gain: 0, orders: [1, 2] },
+        },
+        {
+          name: "mechanical",
+          combustionVariation: { seed: 101, amplitude: 0, width: 0 },
+          mechanical: { gain: 0.04, orders: [1, 2] },
+        },
+        {
+          name: "both",
+          combustionVariation: { seed: 101, amplitude: 0.08, width: 0.05 },
+          mechanical: { gain: 0.04, orders: [1, 2] },
+        },
+      ] as const;
+      const rendered = new Map<string, Float32Array>();
+
+      for (const combination of combinations) {
+        const config = {
+          ...base,
+          combustionVariation: combination.combustionVariation,
+          mechanical: combination.mechanical,
+        };
+        const first = new Processor(options(config, `${combination.name}-a`));
+        const restarted = new Processor(
+          options(config, `${combination.name}-b`),
+        );
+        const frames = Math.floor(runtimeSampleRate * 0.5);
+        const firstPcm = renderDuration(first, frames, 0.7);
+        const restartedPcm = renderDuration(restarted, frames, 0.7);
+
+        expect(restartedPcm).toEqual(firstPcm);
+        expect([...firstPcm].every(Number.isFinite)).toBe(true);
+        expect(Math.max(...firstPcm.map(Math.abs))).toBeLessThanOrEqual(1);
+        expect(first.port.messages).not.toContainEqual(
+          expect.objectContaining({ type: "fatal-error" }),
+        );
+        rendered.set(combination.name, firstPcm);
+      }
+
+      expect(rendered.get("variation")).not.toEqual(rendered.get("disabled"));
+      expect(rendered.get("mechanical")).not.toEqual(rendered.get("disabled"));
+      expect(rendered.get("both")).not.toEqual(rendered.get("disabled"));
+    },
+  );
+
+  it("uses the applied variation seed and resets it on config replacement", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const Processor = registeredProcessor!;
+    const base = structuredClone(singleCylinderPreset.config);
+    const seeded = (seed: number) => ({
+      ...base,
+      combustionVariation: { seed, amplitude: 0.08, width: 0.05 },
+      mechanical: { gain: 0, orders: [1] },
+    });
+    const first = new Processor(options(seeded(7), "seed-7"));
+    const different = new Processor(options(seeded(8), "seed-8"));
+    const firstPcm = renderDuration(first, 48_000, 0.7);
+    const differentPcm = renderDuration(different, 48_000, 0.7);
+    expect(differentPcm).not.toEqual(firstPcm);
+
+    first.port.onmessage?.({
+      data: {
+        type: "replace-config",
+        requestId: "seed-7-reapplied",
+        config: { version: 1, snapshot: seeded(7) },
+      },
+    } as MessageEvent);
+    expect(renderDuration(first, 48_000, 0.7)).toEqual(
+      renderDuration(
+        new Processor(options(seeded(7), "seed-7-fresh")),
+        48_000,
+        0.7,
+      ),
+    );
+  });
+
   it("uses intake and exhaust config in the product processor", async () => {
     vi.stubGlobal("sampleRate", 48_000);
     await import("../../src/audio/worklets/engine-audio-processor");

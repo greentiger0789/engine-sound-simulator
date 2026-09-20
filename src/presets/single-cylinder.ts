@@ -44,6 +44,8 @@ export const singleCylinderPreset: EnginePreset = {
     ],
     intake: { noiseGain: 0.18, resonanceHz: 190 },
     exhaust: { pipeLengthM: 1.1, damping: 0.16, mufflerAmount: 0.45 },
+    combustionVariation: { seed: 0x16c0ffee, amplitude: 0.06, width: 0.04 },
+    mechanical: { gain: 0.035, orders: [1, 2] },
   },
 };
 

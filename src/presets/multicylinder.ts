@@ -15,6 +15,8 @@ const modelConfigDefaults = {
   ],
   intake: { noiseGain: 0.2, resonanceHz: 210 },
   exhaust: { pipeLengthM: 1.25, damping: 0.18, mufflerAmount: 0.5 },
+  combustionVariation: { seed: 0x16c0ffee, amplitude: 0.06, width: 0.04 },
+  mechanical: { gain: 0.035, orders: [1, 2] },
 } as const;
 
 const modelValueSource = "model-values" as const;
