@@ -1,4 +1,6 @@
 import type { FiringEvent } from "../../engine/events";
+import type { CombustionVariationConfig } from "../../engine/config";
+import { SeededRandom } from "./seeded-random";
 
 /** Configuration for the procedural combustion-pulse renderer. */
 export interface SingleCylinderPulseDspOptions {
@@ -11,6 +13,8 @@ export interface SingleCylinderPulseDspOptions {
   readonly maxActivePulses?: number;
   /** Hard bound for event validation and processing in one audio block. */
   readonly maxEventsPerBlock?: number;
+  /** Seeded, bounded per-ignition amplitude and width variation. */
+  readonly variation?: CombustionVariationConfig;
 }
 
 export interface PulseRenderInput {
@@ -48,6 +52,7 @@ const DEFAULT_MAX_ACTIVE_PULSES = 256;
 const DEFAULT_MAX_EVENTS_PER_BLOCK = 512;
 const MAX_PULSE_CAPACITY = 4_096;
 const PULSE_TAIL_WIDTHS = 16;
+const MAX_VARIATION_FRACTION = 0.25;
 
 function finite(value: number): boolean {
   return Number.isFinite(value);
@@ -70,6 +75,9 @@ export class SingleCylinderPulseDsp {
   private readonly dcCoefficient: number;
   private readonly maxActivePulses: number;
   private readonly maxEventsPerBlock: number;
+  private readonly amplitudeVariation: number;
+  private readonly widthVariation: number;
+  private readonly random: SeededRandom;
   // Fixed-capacity structure-of-arrays storage avoids event-time allocation in
   // the Worklet loop. Cylinder identity is intentionally not needed after an
   // event has excited its analytic pulse.
@@ -94,6 +102,11 @@ export class SingleCylinderPulseDsp {
       options.maxActivePulses ?? DEFAULT_MAX_ACTIVE_PULSES;
     const maxEventsPerBlock =
       options.maxEventsPerBlock ?? DEFAULT_MAX_EVENTS_PER_BLOCK;
+    const variation = options.variation ?? {
+      seed: 0,
+      amplitude: 0,
+      width: 0,
+    };
     if (!finite(outputGain) || outputGain < 0 || outputGain > MAX_OUTPUT_GAIN) {
       throw new RangeError(
         `outputGain must be finite and in [0, ${MAX_OUTPUT_GAIN}]`,
@@ -105,6 +118,25 @@ export class SingleCylinderPulseDsp {
       dcBlockerHz >= options.sampleRate / 2
     ) {
       throw new RangeError("dcBlockerHz must be in (0, Nyquist)");
+    }
+    if (
+      !Number.isSafeInteger(variation.seed) ||
+      variation.seed < 0 ||
+      variation.seed > 0xffff_ffff
+    ) {
+      throw new RangeError("variation.seed must be a uint32 safe integer");
+    }
+    if (
+      !finite(variation.amplitude) ||
+      variation.amplitude < 0 ||
+      variation.amplitude > MAX_VARIATION_FRACTION ||
+      !finite(variation.width) ||
+      variation.width < 0 ||
+      variation.width > MAX_VARIATION_FRACTION
+    ) {
+      throw new RangeError(
+        `variation amounts must be finite and in [0, ${MAX_VARIATION_FRACTION}]`,
+      );
     }
     if (
       !Number.isSafeInteger(maxActivePulses) ||
@@ -128,6 +160,9 @@ export class SingleCylinderPulseDsp {
     this.outputGain = outputGain;
     this.maxActivePulses = maxActivePulses;
     this.maxEventsPerBlock = maxEventsPerBlock;
+    this.amplitudeVariation = variation.amplitude;
+    this.widthVariation = variation.width;
+    this.random = new SeededRandom(variation.seed);
     this.pulseAges = new Float64Array(maxActivePulses);
     this.pulseAmplitudes = new Float64Array(maxActivePulses);
     this.pulseWidths = new Float64Array(maxActivePulses);
@@ -168,6 +203,7 @@ export class SingleCylinderPulseDsp {
     this.previousOutput = 0;
     this.previousLimitedInput = 0;
     this.previousFinalOutput = 0;
+    this.random.reset();
     this.fault = { faulted: false, reason: null };
   }
 
@@ -376,8 +412,13 @@ export class SingleCylinderPulseDsp {
     if (this.activePulseCount >= this.maxActivePulses) return false;
     // x² exp(-2x) has a continuous value and slope at ignition and a bounded,
     // rapidly decaying spectrum. Load changes both combustion strength and tail.
-    const amplitude = 0.12 + 0.88 * load;
-    const widthFrames = this.sampleRate * (0.0025 + 0.0075 * load);
+    const amplitude =
+      (0.12 + 0.88 * load) *
+      (1 + this.amplitudeVariation * this.random.nextSigned());
+    const widthFrames =
+      this.sampleRate *
+      (0.0025 + 0.0075 * load) *
+      (1 + this.widthVariation * this.random.nextSigned());
     const index = this.activePulseCount;
     // The sample represents the interval end, preserving sub-sample ignition.
     this.pulseAges[index] = 1 - sampleOffset;

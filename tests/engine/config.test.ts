@@ -120,6 +120,48 @@ describe("parseEngineConfig", () => {
     expect(issuePaths(curve)).toContain("$.torqueCurve[1].rpm");
   });
 
+  it("normalizes omitted M4 sound controls to compatible disabled defaults", () => {
+    const input = validInput();
+    delete input.combustionVariation;
+    delete input.mechanical;
+    const result = parseEngineConfig(input);
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        combustionVariation: { seed: 0, amplitude: 0, width: 0 },
+        mechanical: { gain: 0, orders: [1] },
+      },
+    });
+  });
+
+  it("rejects invalid variation seeds, amounts, mechanical gain, and orders", () => {
+    const variation = validInput();
+    variation.combustionVariation = {
+      seed: 0x1_0000_0000,
+      amplitude: 0.3,
+      width: -0.1,
+    };
+    expect(issuePaths(variation)).toEqual(
+      expect.arrayContaining([
+        "$.combustionVariation.seed",
+        "$.combustionVariation.amplitude",
+        "$.combustionVariation.width",
+      ]),
+    );
+
+    const mechanical = validInput();
+    mechanical.mechanical = { gain: 0.3, orders: [0, Number.NaN, 33] };
+    expect(issuePaths(mechanical)).toEqual(
+      expect.arrayContaining([
+        "$.mechanical.gain",
+        "$.mechanical.orders[0]",
+        "$.mechanical.orders[1]",
+        "$.mechanical.orders[2]",
+      ]),
+    );
+  });
+
   it("remains independent from React, DOM, and Web Audio imports", async () => {
     const source = await import("../../src/engine/config?raw");
     expect(source.default).not.toMatch(/from\s+["'](?:react|.*audio.*)["']/i);
