@@ -16,8 +16,8 @@ function harnessUrl(server: WorkletServer, query = ""): string {
 
 interface AudioGraphInstrumentation {
   readonly failWorkletLoads?: number;
-  /** Make the first native worklet initialization reject its supplied config. */
-  readonly rejectFirstProcessorConfig?: boolean;
+  /** Make a specific native worklet initialization reject its supplied config. */
+  readonly rejectProcessorConfigOnAttempt?: number;
 }
 
 /**
@@ -29,11 +29,11 @@ async function instrumentAudioGraph(
   page: Page,
   {
     failWorkletLoads = 0,
-    rejectFirstProcessorConfig = false,
+    rejectProcessorConfigOnAttempt,
   }: AudioGraphInstrumentation = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({ failuresBeforeSuccess, rejectFirstConfig }) => {
+    ({ failuresBeforeSuccess, processorConfigRejectAttempt }) => {
       const trackedWindow = window as typeof window & {
         __e2eAudioContextCount?: number;
         __e2eAudioWorkletNodeCount?: number;
@@ -107,7 +107,12 @@ async function instrumentAudioGraph(
         construct(target, argumentsList, newTarget) {
           const mutationCount =
             trackedWindow.__e2eProcessorConfigMutationCount ?? 0;
-          if (rejectFirstConfig && mutationCount === 0) {
+          const nodeAttempt =
+            (trackedWindow.__e2eAudioWorkletNodeCount ?? 0) + 1;
+          if (
+            processorConfigRejectAttempt === nodeAttempt &&
+            mutationCount === 0
+          ) {
             const options = argumentsList[2] as AudioWorkletNodeOptions;
             const config = options.processorOptions?.config as {
               snapshot?: {
@@ -150,7 +155,7 @@ async function instrumentAudioGraph(
     },
     {
       failuresBeforeSuccess: failWorkletLoads,
-      rejectFirstConfig: rejectFirstProcessorConfig,
+      processorConfigRejectAttempt: rejectProcessorConfigOnAttempt ?? 0,
     },
   );
 }
@@ -744,11 +749,21 @@ test("renders each active parallel-twin firing order with live waveform and spec
   }
 });
 
-test("preserves active configuration after a processor rejection and promotes pending on retry", async ({
+test("covers the product start, stop, rejected reapply, and successful retry flow", async ({
   page,
 }) => {
-  await instrumentAudioGraph(page, { rejectFirstProcessorConfig: true });
+  await instrumentAudioGraph(page, { rejectProcessorConfigOnAttempt: 2 });
   await page.goto("/");
+
+  // A running status is reached only after the native processor has confirmed
+  // its initial configuration and sent ready.
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await expect
+    .poll(() => audioGraphCount(page, "__e2eAudioWorkletNodeCount"))
+    .toBe(1);
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
 
   await page
     .getByLabel("Engine preset")
