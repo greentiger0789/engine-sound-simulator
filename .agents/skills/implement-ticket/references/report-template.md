@@ -14,6 +14,8 @@ Ticket link, concrete behavior implemented, and implementation commit SHA review
 
 Map each mandatory acceptance criterion to the named test file/case and assertion, observed behavior, or artifact that verifies it. Distinguish code inspection, harness tests, product E2E and physical listening; none substitutes for another without checking the required contract. Distinguish optional phase-level listening checks from mandatory requirements.
 
+For manual checks in this owner-driven hobby project, an explicit owner report is evidence for the behavior actually reported. Record its date, scope, and any missing browser/device/measurement details. Never invent absent values or expand a general report into a precise latency, duration, sample-rate, or cross-browser claim. If the owner explicitly narrows or defers a manual criterion, link the corresponding ticket/plan change and assess `verified` against the revised contract.
+
 ## Review
 
 Self-review scope and result. Independent reviewer role/model when available, findings, corrections and final recheck. Explain serial fallback if delegation was unavailable. List any unresolved questions separately.

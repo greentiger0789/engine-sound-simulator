@@ -12,13 +12,15 @@ For a resumed PR that a human already marked ready, preserve that state unless t
 
 Read the selected ticket and its referenced plan sections, not every ticket. A dependency must be verified and merged into `origin/main`. If it is missing, report the exact prerequisite; do not silently implement multiple tickets. Resume an existing ticket branch/PR when present rather than duplicating it.
 
+This is an owner-driven hobby project and is not currently gated for a public production release. An explicit owner statement that a manual scenario worked is sufficient evidence for that manual scenario even when browser, device, timing, or recording details were not captured; record exactly what was reported and state the missing details instead of inventing them. The owner may explicitly narrow or defer manual browser, listening, performance, hosting, or deployment acceptance. When that changes an existing ticket contract, update the ticket, plan/runbook where relevant, and report in a small prerequisite PR before starting a dependent ticket. Automated acceptance, `Repository checks`, current regressions, and repository safety rules are not waived by this policy.
+
 ## Delegation and quality
 
 The user requests cost-conscious subagents. Use `gpt-5.6-terra` with `medium` effort for bounded workers; use a fresh Terra reviewer with `high` effort for substantive implementation. Delegate independent work only, normally at most two writers with non-overlapping ownership, reserving a slot for review. The orchestrator owns Git, shared configuration, integration, and the final review. See the skill for model fallback and tool-specific invocation.
 
 Workers must not delegate recursively or commit/push/create PRs. Pass only the task, acceptance criteria, owned paths, and required contracts. Do not fork the entire conversation when selecting a lower-cost model.
 
-Continue the review → fix → relevant tests loop until no actionable findings remain in the delivered change. For incidental pre-existing bugs, follow [the skill policy](.agents/skills/implement-ticket/references/incidental-bugs.md): include small verified fixes, or commit larger out-of-scope bug records and disclose them; never defer current regressions or bypass acceptance/CI blockers. Record untestable requirements as pending; never claim defect-free software or fabricate listening/performance evidence.
+Continue the review → fix → relevant tests loop until no actionable findings remain in the delivered change. For incidental pre-existing bugs, follow [the skill policy](.agents/skills/implement-ticket/references/incidental-bugs.md): include small verified fixes, or commit larger out-of-scope bug records and disclose them; never defer current regressions or bypass acceptance/CI blockers. Record untestable requirements as pending unless the owner explicitly makes them optional; never claim defect-free software or fabricate listening/performance evidence.
 
 ## Project invariants
 
