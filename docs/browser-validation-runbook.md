@@ -1,17 +1,16 @@
-# Windows ブラウザ・長時間音声検証ランブック
+# 公開準備用 Windows ブラウザ・長時間音声検証ランブック
 
-チケット 20 の必須 host evidence を、Windows 実機の実際の音声出力で同じ
-条件に再現して採取する手順である。Docker、HTTP 応答、headless Playwright は
+公開デプロイを検討する段階で、Windows 実機の実際の音声出力から
+詳細な host evidence を同じ条件で採取する手順である。現在の趣味開発中は
+任意であり、未実施でもチケット 20 や後続の機能実装を止めない。Docker、HTTP 応答、headless Playwright は
 事前回帰には使えるが、ここでいう開始成功、可聴応答、音切れ、CPU 使用率、
 出力遅延の合格証明にはならない。
 
 このアプリは回転と燃焼イベントから音を生成する。録音済みループの再生成功を
-確認する手順ではない。結果はチケット report の raw evidence に転記し、未実施の
-必須項目が一つでも未実施または失敗なら Ticket 20 を `verified` にしない。全 browser
-matrix セル、基準 run、wired / internal の可聴応答 trial が `pass` の場合だけ
-`verified` にできる。実施した必須項目が期待を満たさなければ検証結果を `fail` とし、
-不具合を修正して同じ条件で再実施するまでは report を
-`Status: manual-validation-pending`（外部要因で続行不能なら `Status: blocked`）に保つ。
+確認する手順ではない。公開判定にこのランブックを使う場合は、全 browser
+matrix セル、基準 run、wired / internal の可聴応答 trial を別途定義する公開受け入れ
+条件に照らす。実施した項目が期待を満たさなければ結果を `fail` とし、不具合を修正して
+同じ条件で再実施する。未実施値を趣味開発中のオーナー報告から推測しない。
 
 ## 実施前の固定条件
 
@@ -81,14 +80,14 @@ property が未実装、`undefined`、または安全に読み取れない場合
 
 ## Browser matrix
 
-以下を Windows の Chromium、Microsoft Edge、Firefox それぞれで実施する。
-Chromium は Chrome など Chromium 系の製品名を明記する。各セルには
+以下を Windows の Chrome、Microsoft Edge、Firefox それぞれで実施する。
+各セルには
 `pass`、`fail`、`not-tested` のいずれかだけを置き、所見、正確な時刻、console error、
 再現手順への参照を添える。
 
 | Browser / version | Start: running + 可聴 | Stop: 無音 / idle | preset apply: 停止中に適用し次回開始へ反映 | error display: 意図的な無効位相 | Worklet / feature 差・console error | 判定   |
 | ----------------- | --------------------- | ----------------- | ------------------------------------------ | ------------------------------- | ----------------------------------- | ------ |
-| Chromium `TODO`   | `TODO`                | `TODO`            | `TODO`                                     | `TODO`                          | `TODO`                              | `TODO` |
+| Chrome `TODO`     | `TODO`                | `TODO`            | `TODO`                                     | `TODO`                          | `TODO`                              | `TODO` |
 | Edge `TODO`       | `TODO`                | `TODO`            | `TODO`                                     | `TODO`                          | `TODO`                              | `TODO` |
 | Firefox `TODO`    | `TODO`                | `TODO`            | `TODO`                                     | `TODO`                          | `TODO`                              | `TODO` |
 
@@ -108,7 +107,7 @@ start` を押す。`Active` / `Pending` 表示を確認後、もう一度開始�
    raw のまま残して `fail` とする。
 
 Firefox では、AudioWorklet 利用可否、`outputLatency` の露出、suspend / resume、表示
-されたエラーを Chromium/Edge と同一であると仮定しない。異なる場合は feature difference
+されたエラーを Chrome/Edge と同一であると仮定しない。異なる場合は feature difference
 欄に事実を書く。実行した Firefox で必須機能が未対応なら `fail` とする。Firefox 自体を
 起動できない、必要な device がないなど、検証を実施できなかった場合だけ `not-tested` と
 理由を記す。
@@ -220,7 +219,7 @@ Preset / throttle / Dyno load / Volume / mute:
 Start timestamp=; end timestamp=; elapsed=
 
 Matrix:
-  Chromium: start=, stop=, preset apply=, error display=, feature difference=, raw notes=
+  Chrome: start=, stop=, preset apply=, error display=, feature difference=, raw notes=
   Edge: start=, stop=, preset apply=, error display=, feature difference=, raw notes=
   Firefox: start=, stop=, preset apply=, error display=, feature difference=, raw notes=
 

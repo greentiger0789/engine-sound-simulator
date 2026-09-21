@@ -2,11 +2,11 @@
 
 ## 目標
 
-Windows の Chromium、Edge、Firefoxで機能を検証し、4気筒48kHzの10分動作と可聴応答目標を測定して公開品質の host evidence を確定する。
+Chrome でオーナーのスモーク確認を行い、自動回帰と組み合わせて趣味開発段階の host evidence を確定する。公開準備時に使えるクロスブラウザ・長時間・遅延測定のランブックも保持する。
 
 ## 範囲 / 非対象
 
-- 範囲: browser matrix、10分runbook、latency/CPU/device記録、known issues、host evidence report。
+- 範囲: Chrome のオーナースモーク確認、自動ブラウザ回帰、公開準備用の browser matrix・10分・latency/CPU/device ランブック、known issues、host evidence report。
 - 非対象: unsupported browserの実装、モバイルSafari、無関係な性能機能の追加（検証で見つかった対象範囲の不具合はこのチケットで修正）。
 
 ## 依存関係
@@ -19,15 +19,15 @@ Windows の Chromium、Edge、Firefoxで機能を検証し、4気筒48kHzの10�
 
 ## 実装契約と想定ファイル
 
-- runbookは browser/version、OS、CPU、audio device、sampleRate、baseLatency/outputLatency（取得時）、preset、load、throttle、test開始/終了を記録する。
-- 4気筒48kHzで10分再生し、知覚音切れ、操作から可聴応答、processor error、memory/CPU所見を記す。Bluetooth遅延は別扱いにする。
-- FirefoxはWorklet/feature差を明記し、失敗をHTTP成功で隠さない。
+- オーナーの明示的な手動確認報告は、報告された範囲の host evidence として扱い、未提供の環境・測定値は推測しない。
+- 公開準備用 runbook は browser/version、OS、CPU、audio device、sampleRate、baseLatency/outputLatency（取得時）、preset、load、throttle、test開始/終了を記録できる状態を保つ。
+- Edge / Firefox、4気筒48kHzの10分再生、50ms可聴応答測定、CPU/memory profiler、Bluetooth比較は公開準備開始まで任意とする。実施時は headless/HTTP 成功で代用せず、失敗を隠さない。
 
 ## 受け入れ基準
 
-- Chromium、Edge、Firefoxそれぞれで開始、停止、preset apply、error表示の結果が matrix にある。
-- 基準機の4気筒48kHz/10分の結果と、50ms可聴応答の測定方法・結果が記録される。
-- 未達または未検証の環境は明示する。対象機能の不具合は修正・再検証し、外部要因で未完了なら verified にせず再現手順と残る対応を記す。
+- Docker の Chromium E2E が開始、停止、4気筒 preset apply、無効位相 error 表示を dev/web で検証する。
+- Chrome で問題がなかったというオーナーのスモーク確認報告があり、問題が報告された場合は対象機能を修正・再検証する。報告に含まれない OS や操作範囲は推測しない。
+- クロスブラウザ、10分動作、50ms可聴応答の未実施は任意の公開準備証跡として明示し、未実施だけで `verified` を妨げない。
 
 ## Docker 検証
 
@@ -40,8 +40,8 @@ browserごとの実施者は並行できる。matrix/report統合は一担当が
 
 ## 手動証跡
 
-**必須。** Windows実機と音声出力で上記matrixを実施し、`reports/020.md`にraw結果を残す。未実施なら `Status: manual-validation-pending` とし、このチケットはverifiedにしない。
+趣味開発中は Chrome のオーナースモーク確認を必須とする。報告された範囲と未提供の詳細を `reports/020.md` に正直に記録する。公開準備時は runbook の詳細 matrix と測定を別途実施する。
 
 ## 完了報告と聴感
 
-このチケットだけはhost/human evidenceが受け入れ必須である。後続は report が `verified` になるまで依存を開始しない。
+Chrome のオーナースモーク確認と自動回帰を趣味開発段階の受け入れとする。後続は改訂後 report が `verified` として main に取り込まれてから開始する。公開前には詳細ランブックを再実行する。
