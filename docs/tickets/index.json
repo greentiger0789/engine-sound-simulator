@@ -198,5 +198,13 @@
     "milestone": "M3",
     "depends_on": [4],
     "file": "docs/tickets/025-oxlint-migration.md"
+  },
+  {
+    "id": 26,
+    "slug": "node26-typescript7-toolchain",
+    "title": "Node.js 26 / TypeScript 7 ツールチェーン移行",
+    "milestone": "M1",
+    "depends_on": [4],
+    "file": "docs/tickets/026-node26-typescript7-toolchain.md"
   }
 ]
