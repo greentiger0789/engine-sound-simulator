@@ -235,6 +235,25 @@ describe("EngineAudioProcessor", () => {
     expect(meter.getP99LoadRatio()).toBeGreaterThan(0);
   });
 
+  it("keeps rendering without recording coarse timing when Performance is unavailable", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    vi.stubGlobal("performance", undefined);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const processor = new registeredProcessor!(options("date-clock"));
+    const output = render(processor, 128, new Float32Array([0.5]));
+    const sampleCount = (
+      processor as unknown as {
+        runtime: { budget: { getSampleCount(): number } };
+      }
+    ).runtime.budget.getSampleCount();
+
+    expect([...output].every(Number.isFinite)).toBe(true);
+    expect(sampleCount).toBe(0);
+    expect(processor.port.messages).not.toContainEqual(
+      expect.objectContaining({ type: "fatal-error" }),
+    );
+  });
+
   it("rejects unsupported redline density before replacing a healthy runtime", async () => {
     vi.stubGlobal("sampleRate", 48_000);
     await import("../../src/audio/worklets/engine-audio-processor");

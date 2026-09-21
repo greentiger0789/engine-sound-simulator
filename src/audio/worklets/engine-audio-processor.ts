@@ -105,7 +105,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       return true;
     }
     const runtime = this.runtime;
-    const processingStartedMs = performance.now();
+    const processingStartedMs = this.performanceNowMs();
     try {
       const throttle = parameters.throttle;
       const gain = parameters.gain;
@@ -225,9 +225,12 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         error instanceof Error ? error.message : "engine processor fault",
       );
     } finally {
-      const elapsedMs = performance.now() - processingStartedMs;
-      if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
-        runtime.budget.record(elapsedMs, frameCount, sampleRate);
+      const processingEndedMs = this.performanceNowMs();
+      if (processingStartedMs !== null && processingEndedMs !== null) {
+        const elapsedMs = processingEndedMs - processingStartedMs;
+        if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+          runtime.budget.record(elapsedMs, frameCount, sampleRate);
+        }
       }
     }
     return true;
@@ -355,6 +358,13 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       throw new RangeError(`${name} must be finite and in [0, ${maximum}]`);
     }
     return value;
+  }
+
+  /** AudioWorkletGlobalScope does not expose Performance in every browser. */
+  private performanceNowMs(): number | null {
+    return globalThis.performance === undefined
+      ? null
+      : globalThis.performance.now();
   }
 
   private postTelemetry(
