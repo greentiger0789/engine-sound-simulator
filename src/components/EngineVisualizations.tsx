@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import type { AudioVisualizationSource } from "../audio/controller";
 import type { EngineConfig } from "../engine/config";
@@ -34,13 +40,27 @@ export function EngineVisualizations({
   const visualizationRef = useRef<HTMLDivElement>(null);
   const waveformRef = useRef<HTMLCanvasElement>(null);
   const spectrumRef = useRef<HTMLCanvasElement>(null);
+  const [reducedMotion, setReducedMotion] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
   const events = useMemo(
     () => firingEventMarkers(activeConfig),
     [activeConfig],
   );
 
   useEffect(() => {
-    if (!running) return;
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    // Animation is optional presentation and must not alter audio timing.
+    if (!running || reducedMotion) return;
     const source = controller.getVisualizationSource();
     if (!source) return;
     const waveform = waveformRef.current;
@@ -92,7 +112,7 @@ export function EngineVisualizations({
       cleanup?.();
       if (!cleanup) observer?.disconnect();
     };
-  }, [controller, running]);
+  }, [controller, reducedMotion, running]);
 
   return (
     <section
@@ -141,27 +161,36 @@ export function EngineVisualizations({
           ))}
         </ol>
       </section>
-      <div className="analyser-figures" ref={visualizationRef}>
-        <figure className="analyser-figure waveform-figure">
-          <figcaption>Waveform</figcaption>
-          <canvas
-            ref={waveformRef}
-            data-testid="waveform-canvas"
-            aria-label="Current audio waveform"
-          />
-        </figure>
-        <figure className="analyser-figure spectrum-figure">
-          <figcaption>
-            Frequency spectrum:{" "}
-            {nyquistLabel(controller.getVisualizationSource()?.sampleRate ?? 0)}
-          </figcaption>
-          <canvas
-            ref={spectrumRef}
-            data-testid="spectrum-canvas"
-            aria-label="Current audio frequency spectrum"
-          />
-        </figure>
-      </div>
+      {reducedMotion ? (
+        <p className="visualization-reduced">
+          Live waveform and spectrum animation are reduced by your motion
+          preference. Audio remains unchanged.
+        </p>
+      ) : (
+        <div className="analyser-figures" ref={visualizationRef}>
+          <figure className="analyser-figure waveform-figure">
+            <figcaption>Waveform</figcaption>
+            <canvas
+              ref={waveformRef}
+              data-testid="waveform-canvas"
+              aria-label="Current audio waveform"
+            />
+          </figure>
+          <figure className="analyser-figure spectrum-figure">
+            <figcaption>
+              Frequency spectrum:{" "}
+              {nyquistLabel(
+                controller.getVisualizationSource()?.sampleRate ?? 0,
+              )}
+            </figcaption>
+            <canvas
+              ref={spectrumRef}
+              data-testid="spectrum-canvas"
+              aria-label="Current audio frequency spectrum"
+            />
+          </figure>
+        </div>
+      )}
     </section>
   );
 }

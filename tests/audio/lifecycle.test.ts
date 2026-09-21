@@ -55,6 +55,14 @@ describe("transitionAudioLifecycle", () => {
   });
 
   it("allows interruption and recovery paths used by the controller", () => {
+    expect(transitionAudioLifecycle("running", "context-suspended")).toEqual({
+      accepted: true,
+      status: "suspended",
+    });
+    expect(transitionAudioLifecycle("starting", "context-suspended")).toEqual({
+      accepted: true,
+      status: "suspended",
+    });
     expect(transitionAudioLifecycle("starting", "stop-requested")).toEqual({
       accepted: true,
       status: "stopping",

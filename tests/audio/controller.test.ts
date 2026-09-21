@@ -160,6 +160,11 @@ class FakeAudioContext {
   async resume(): Promise<void> {
     this.state = "running";
   }
+
+  async suspend(): Promise<void> {
+    this.state = "suspended";
+    this.onstatechange?.();
+  }
 }
 
 describe("AudioController", () => {
@@ -415,6 +420,80 @@ describe("AudioController", () => {
     await controller.start();
     expect(FakeAudioContext.instances).toHaveLength(1);
     expect(controller.getSnapshot().status).toBe("running");
+  });
+
+  it("fades then suspends on page hide, and only explicit start resumes it", async () => {
+    const controller = new AudioController();
+    await controller.start();
+    const context = FakeAudioContext.instances[0];
+
+    const hiding = controller.handleVisibilityChange(true);
+    await vi.advanceTimersByTimeAsync(30);
+    await hiding;
+    expect(context.gains[0].gain.calls).toContainEqual(["ramp", 0, 10.03]);
+    expect(context.state).toBe("suspended");
+    expect(controller.getSnapshot().status).toBe("suspended");
+
+    await controller.handleVisibilityChange(false);
+    expect(context.state).toBe("suspended");
+    expect(controller.getSnapshot().status).toBe("suspended");
+
+    await controller.start();
+    expect(FakeAudioContext.instances).toHaveLength(1);
+    expect(context.state).toBe("running");
+    expect(controller.getSnapshot().status).toBe("running");
+  });
+
+  it("honours a hide received while the worklet is still starting", async () => {
+    let finishLoad: (() => void) | undefined;
+    FakeAudioContext.loadWorklet = () =>
+      new Promise<void>((resolve) => {
+        finishLoad = resolve;
+      });
+    const controller = new AudioController();
+    const starting = controller.start();
+    const hiding = controller.handleVisibilityChange(true);
+    finishLoad?.();
+
+    await vi.advanceTimersByTimeAsync(30);
+    await starting;
+    await hiding;
+    const context = FakeAudioContext.instances[0];
+    expect(context.state).toBe("suspended");
+    expect(controller.getSnapshot().status).toBe("suspended");
+    expect(context.gains[0].gain.calls).not.toContainEqual(["ramp", 1, 10.03]);
+  });
+
+  it("handles processor failure by detaching the graph before recovery", async () => {
+    const controller = new AudioController();
+    await controller.start();
+    const failedNode = FakeAudioWorkletNode.instances[0];
+    const failedContext = FakeAudioContext.instances[0];
+
+    failedNode.onprocessorerror?.();
+    await Promise.resolve();
+    expect(failedNode.disconnected).toBe(true);
+    expect(failedContext.close).toHaveBeenCalledOnce();
+    expect(controller.getVisualizationSource()).toBeNull();
+
+    await controller.start();
+    expect(FakeAudioContext.instances).toHaveLength(2);
+    expect(FakeAudioWorkletNode.instances).toHaveLength(2);
+    expect(controller.getSnapshot().status).toBe("running");
+  });
+
+  it("does not suspend a graph that stop detached during a visibility fade", async () => {
+    const controller = new AudioController();
+    await controller.start();
+    const context = FakeAudioContext.instances[0];
+    const hiding = controller.handleVisibilityChange(true);
+    const stopping = controller.stop();
+
+    await vi.advanceTimersByTimeAsync(30);
+    await hiding;
+    await stopping;
+    expect(context.close).toHaveBeenCalledOnce();
+    expect(controller.getSnapshot().status).toBe("idle");
   });
 
   it("serializes stop behind a worklet load still in flight", async () => {

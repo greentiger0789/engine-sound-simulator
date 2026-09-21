@@ -131,6 +131,7 @@ export class AudioController {
   private visualizationSource: AudioVisualizationSource | null = null;
   private startPromise: Promise<void> | null = null;
   private stopPromise: Promise<void> | null = null;
+  private visibilityPromise: Promise<void> | null = null;
   private teardownPromise: Promise<void> | null = null;
   private fadeState: FadeState | null = null;
   private processorReady = false;
@@ -142,6 +143,7 @@ export class AudioController {
   private requestedConfig: EngineConfig | null = null;
   private stopRequested = false;
   private disposed = false;
+  private visibilityHidden = false;
   private readonly listeners = new Set<SnapshotListener>();
   private snapshot: AudioControllerSnapshot = {
     status: "idle",
@@ -172,6 +174,11 @@ export class AudioController {
   start(): Promise<void> {
     if (this.disposed) {
       return Promise.resolve();
+    }
+    // Do not allow an explicit user restart to race a page-hide fade/suspend.
+    // Once that operation is complete, this same user gesture may resume it.
+    if (this.visibilityPromise !== null) {
+      return this.visibilityPromise.then(() => this.start());
     }
     if (this.stopPromise !== null) {
       return this.stopPromise.then(() => this.start());
@@ -215,6 +222,38 @@ export class AudioController {
         this.stopPromise = null;
       });
     return this.stopPromise;
+  }
+
+  /**
+   * Applies the document visibility policy without installing document-level
+   * listeners. Showing a page intentionally does nothing: Web Audio resume
+   * must remain tied to a later explicit user start action.
+   */
+  handleVisibilityChange(hidden: boolean): Promise<void> {
+    this.visibilityHidden = hidden;
+    if (!hidden || this.disposed) return Promise.resolve();
+    return this.beginVisibilitySuspend();
+  }
+
+  private beginVisibilitySuspend(): Promise<void> {
+    if (this.visibilityPromise !== null) return this.visibilityPromise;
+    if (
+      this.snapshot.status !== "starting" &&
+      this.snapshot.status !== "running"
+    ) {
+      return Promise.resolve();
+    }
+
+    const context = this.context;
+    const fadeGain = this.fadeGain;
+    if (context === null || fadeGain === null) return Promise.resolve();
+    this.visibilityPromise = this.suspendForVisibility(
+      context,
+      fadeGain,
+    ).finally(() => {
+      this.visibilityPromise = null;
+    });
+    return this.visibilityPromise;
   }
 
   setVolume(volume: number): void {
@@ -439,6 +478,9 @@ export class AudioController {
         await this.teardown();
         return;
       }
+      // A hide may have happened while the module or graph was initializing.
+      // Keep the fresh graph silent and suspend it before start can complete.
+      if (this.visibilityHidden) await this.beginVisibilitySuspend();
       // Remain silent until this exact initialization request is acknowledged.
     } catch (error: unknown) {
       // Detach any partially constructed graph before publishing the error so
@@ -475,6 +517,36 @@ export class AudioController {
       if (transition.accepted) {
         this.setSnapshot({ status: transition.status, error: null });
       }
+    }
+  }
+
+  private async suspendForVisibility(
+    context: AudioContext,
+    fadeGain: GainNode,
+  ): Promise<void> {
+    const heldValue = this.holdFade(fadeGain, context.currentTime);
+    this.scheduleFade(fadeGain, context.currentTime, heldValue, 0);
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, FADE_SECONDS * 1000),
+    );
+    // stop(), dispose(), or a processor failure may have detached this graph
+    // while the fade timer was pending.
+    if (
+      this.disposed ||
+      this.stopRequested ||
+      this.context !== context ||
+      this.fadeGain !== fadeGain
+    ) {
+      return;
+    }
+    try {
+      await context.suspend();
+    } catch {
+      // A browser may close the context between the guard above and suspend.
+      return;
+    }
+    if (this.context === context && context.state === "suspended") {
+      this.markSuspended();
     }
   }
 
@@ -532,8 +604,12 @@ export class AudioController {
           "processor-ready",
         );
         if (transition.accepted) {
-          this.setSnapshot({ status: transition.status, error: null });
-          this.scheduleFade(this.fadeGain, this.context.currentTime, 0, 1);
+          if (this.visibilityHidden) {
+            void this.beginVisibilitySuspend();
+          } else {
+            this.setSnapshot({ status: transition.status, error: null });
+            this.scheduleFade(this.fadeGain, this.context.currentTime, 0, 1);
+          }
         }
       }
     } else if (message.type === "config-rejected") {
@@ -582,12 +658,20 @@ export class AudioController {
     )
       return;
     if (context.state === "suspended") {
-      this.setSnapshot({ status: "suspended" });
+      this.markSuspended();
     } else if (context.state === "closed") {
       this.fail("context-state-change", "The audio context was closed.", true);
       void this.teardown();
     }
   };
+
+  private markSuspended(): void {
+    const transition = transitionAudioLifecycle(
+      this.snapshot.status,
+      "context-suspended",
+    );
+    if (transition.accepted) this.setSnapshot({ status: transition.status });
+  }
 
   private fail(
     code: AudioControllerErrorCode,
