@@ -72,6 +72,7 @@ export function App() {
   const holdingPointerThrottle = useRef(false);
   const holdingPointerId = useRef<number | null>(null);
   const holdingKeyboardThrottle = useRef(false);
+  const firstInvalidPhaseRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -88,6 +89,16 @@ export function App() {
       );
     };
   }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      void controller.handleVisibilityChange(document.hidden);
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [controller]);
 
   const start = useCallback(() => {
     void controller.start();
@@ -215,6 +226,8 @@ export function App() {
       setValidationIssues([]);
     } else if (result.reason === "validation") {
       setValidationIssues(result.issues);
+      // Return keyboard users to the first field that needs attention.
+      requestAnimationFrame(() => firstInvalidPhaseRef.current?.focus());
     }
   }, [controller, draftConfig, phases]);
 
@@ -228,6 +241,9 @@ export function App() {
   const canStageConfig =
     snapshot.status === "idle" ||
     (snapshot.status === "error" && snapshot.error?.code === "config-rejected");
+  const firstInvalidPhaseIndex = draftConfig.cylinders.findIndex((_, index) =>
+    Boolean(phaseIssue(validationIssues, index)),
+  );
   return (
     <main className="app-shell">
       <section aria-labelledby="app-title" className="controller-area">
@@ -240,13 +256,32 @@ export function App() {
         </header>
 
         <div className="transport" aria-label="Audio transport">
-          <button type="button" onClick={start} disabled={isStartingOrRunning}>
+          <button
+            type="button"
+            onClick={start}
+            disabled={isStartingOrRunning}
+            aria-describedby={
+              snapshot.status === "suspended"
+                ? "transport-help suspension-notice"
+                : "transport-help"
+            }
+          >
             Start audio
           </button>
           <button type="button" onClick={stop} disabled={!canStop}>
             Stop audio
           </button>
         </div>
+        <p className="sr-only" id="transport-help">
+          Starting audio requires an explicit action. If audio is paused while
+          this page is hidden, select Start audio to resume it.
+        </p>
+        {snapshot.status === "suspended" ? (
+          <p className="suspension-notice" id="suspension-notice">
+            Audio is paused. Select Start audio to resume; returning to this
+            page does not restart audio automatically.
+          </p>
+        ) : null}
 
         <div className="control-stack">
           <label className="range-control" htmlFor="volume">
@@ -258,6 +293,7 @@ export function App() {
               max="1"
               step="0.01"
               value={snapshot.volume}
+              aria-valuetext={`${Math.round(snapshot.volume * 100)} percent`}
               onChange={(event) =>
                 controller.setVolume(Number(event.target.value))
               }
@@ -276,6 +312,7 @@ export function App() {
               max="1"
               step="0.01"
               value={snapshot.throttle}
+              aria-valuetext={`${Math.round(snapshot.throttle * 100)} percent`}
               onChange={(event) =>
                 controller.setThrottle(Number(event.target.value))
               }
@@ -295,6 +332,7 @@ export function App() {
               step="1"
               inputMode="numeric"
               value={Math.round(snapshot.throttle * 100)}
+              aria-valuetext={`${Math.round(snapshot.throttle * 100)} percent opening`}
               onChange={(event) =>
                 controller.setThrottle(Number(event.target.value) / 100)
               }
@@ -325,6 +363,7 @@ export function App() {
               max={MAX_LOAD_TORQUE_NM}
               step="0.1"
               value={snapshot.loadTorqueNm}
+              aria-valuetext={`${snapshot.loadTorqueNm.toFixed(1)} newton metres`}
               onChange={(event) =>
                 controller.setLoadTorque(Number(event.target.value))
               }
@@ -354,7 +393,7 @@ export function App() {
               <p className="eyebrow">Configuration</p>
               <h2 id="config-editor-title">Engine configuration</h2>
             </div>
-            <p className="config-state" aria-live="polite">
+            <p className="config-state">
               Active:{" "}
               <output data-testid="active-config">
                 {snapshot.activeConfig.id}
@@ -395,6 +434,13 @@ export function App() {
 
           <fieldset disabled={!canStageConfig}>
             <legend>燃焼位相（720°周期）</legend>
+            {validationIssues.length > 0 ? (
+              <p className="validation-summary" role="alert">
+                Configuration has {validationIssues.length} invalid phase
+                {validationIssues.length === 1 ? "" : "s"}. Review the
+                highlighted fields.
+              </p>
+            ) : null}
             <div className="phase-inputs">
               {draftConfig.cylinders.map((cylinder, index) => {
                 const issue = phaseIssue(validationIssues, index);
@@ -419,6 +465,11 @@ export function App() {
                       }
                       aria-invalid={issue ? true : undefined}
                       aria-describedby={issue ? `${inputId}-error` : undefined}
+                      ref={
+                        index === firstInvalidPhaseIndex
+                          ? firstInvalidPhaseRef
+                          : undefined
+                      }
                     />
                     {issue ? (
                       <span className="field-error" id={`${inputId}-error`}>
@@ -446,7 +497,7 @@ export function App() {
           activeConfig={snapshot.activeConfig}
         />
 
-        <p className="status" aria-live="polite">
+        <p className="status" role="status" aria-atomic="true">
           Status: <output data-testid="audio-status">{snapshot.status}</output>
         </p>
         <dl className="telemetry" aria-label="Engine telemetry">

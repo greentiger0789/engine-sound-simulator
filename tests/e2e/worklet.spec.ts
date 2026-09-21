@@ -36,6 +36,7 @@ async function instrumentAudioGraph(
     ({ failuresBeforeSuccess, processorConfigRejectAttempt }) => {
       const trackedWindow = window as typeof window & {
         __e2eAudioContextCount?: number;
+        __e2eAudioContextSuspendCount?: number;
         __e2eAudioWorkletNodeCount?: number;
         __e2eWorkletLoadCount?: number;
         __e2eAudioWorkletNodes?: AudioWorkletNode[];
@@ -48,8 +49,12 @@ async function instrumentAudioGraph(
         __e2eFrequencyReadCount?: number;
         __e2eObservedWaveformSignal?: number;
         __e2eObservedSpectrumSignal?: number;
+        __e2eVisibilityListenerAddCount?: number;
+        __e2eVisibilityListenerRemoveCount?: number;
+        __e2eVisibilityListenerActiveCount?: number;
       };
       trackedWindow.__e2eAudioContextCount = 0;
+      trackedWindow.__e2eAudioContextSuspendCount = 0;
       trackedWindow.__e2eAudioWorkletNodeCount = 0;
       trackedWindow.__e2eWorkletLoadCount = 0;
       trackedWindow.__e2eAudioWorkletNodes = [];
@@ -62,6 +67,69 @@ async function instrumentAudioGraph(
       trackedWindow.__e2eFrequencyReadCount = 0;
       trackedWindow.__e2eObservedWaveformSignal = 0;
       trackedWindow.__e2eObservedSpectrumSignal = 0;
+      trackedWindow.__e2eVisibilityListenerAddCount = 0;
+      trackedWindow.__e2eVisibilityListenerRemoveCount = 0;
+      trackedWindow.__e2eVisibilityListenerActiveCount = 0;
+
+      const nativeDocumentAddEventListener = document.addEventListener;
+      const nativeDocumentRemoveEventListener = document.removeEventListener;
+      const visibilityListeners = new Map<
+        EventListenerOrEventListenerObject,
+        Set<boolean>
+      >();
+      const captureValue = (
+        options?: boolean | AddEventListenerOptions | EventListenerOptions,
+      ) =>
+        typeof options === "boolean" ? options : (options?.capture ?? false);
+      document.addEventListener = function (
+        this: Document,
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions,
+      ) {
+        if (type === "visibilitychange") {
+          const capture = captureValue(options);
+          const registrations = visibilityListeners.get(listener) ?? new Set();
+          if (!registrations.has(capture)) {
+            registrations.add(capture);
+            visibilityListeners.set(listener, registrations);
+            trackedWindow.__e2eVisibilityListenerAddCount =
+              (trackedWindow.__e2eVisibilityListenerAddCount ?? 0) + 1;
+            trackedWindow.__e2eVisibilityListenerActiveCount =
+              (trackedWindow.__e2eVisibilityListenerActiveCount ?? 0) + 1;
+          }
+        }
+        return nativeDocumentAddEventListener.call(
+          this,
+          type,
+          listener,
+          options,
+        );
+      };
+      document.removeEventListener = function (
+        this: Document,
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | EventListenerOptions,
+      ) {
+        if (type === "visibilitychange") {
+          const capture = captureValue(options);
+          const registrations = visibilityListeners.get(listener);
+          if (registrations?.delete(capture)) {
+            if (registrations.size === 0) visibilityListeners.delete(listener);
+            trackedWindow.__e2eVisibilityListenerRemoveCount =
+              (trackedWindow.__e2eVisibilityListenerRemoveCount ?? 0) + 1;
+            trackedWindow.__e2eVisibilityListenerActiveCount =
+              (trackedWindow.__e2eVisibilityListenerActiveCount ?? 0) - 1;
+          }
+        }
+        return nativeDocumentRemoveEventListener.call(
+          this,
+          type,
+          listener,
+          options,
+        );
+      };
 
       window.addEventListener(
         "engine-simulator:app-lifecycle",
@@ -87,6 +155,12 @@ async function instrumentAudioGraph(
             argumentsList,
             newTarget,
           ) as AudioContext;
+          const nativeSuspend = context.suspend.bind(context);
+          context.suspend = async () => {
+            trackedWindow.__e2eAudioContextSuspendCount =
+              (trackedWindow.__e2eAudioContextSuspendCount ?? 0) + 1;
+            return nativeSuspend();
+          };
           const nativeAddModule = context.audioWorklet.addModule.bind(
             context.audioWorklet,
           );
@@ -244,7 +318,24 @@ async function canvasHasDrawnSignal(canvas: Locator) {
 
 async function audioGraphCount(
   page: Page,
-  property: "__e2eAudioContextCount" | "__e2eAudioWorkletNodeCount",
+  property:
+    | "__e2eAudioContextCount"
+    | "__e2eAudioContextSuspendCount"
+    | "__e2eAudioWorkletNodeCount",
+): Promise<number | undefined> {
+  return page.evaluate((countProperty) => {
+    const trackedWindow = window as typeof window &
+      Record<typeof countProperty, number | undefined>;
+    return trackedWindow[countProperty];
+  }, property);
+}
+
+async function visibilityListenerCount(
+  page: Page,
+  property:
+    | "__e2eVisibilityListenerAddCount"
+    | "__e2eVisibilityListenerRemoveCount"
+    | "__e2eVisibilityListenerActiveCount",
 ): Promise<number | undefined> {
   return page.evaluate((countProperty) => {
     const trackedWindow = window as typeof window &
@@ -563,6 +654,59 @@ test("stages preset phase edits from the keyboard without creating audio", async
     .toBe(0);
 });
 
+test("announces multiple invalid phases once and focuses the first invalid field", async ({
+  page,
+}) => {
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+
+  await page
+    .getByLabel("Engine preset")
+    .selectOption("evenly-spaced-four-model");
+  await page.getByLabel("Cylinder 1 phase (degrees)").fill("720");
+  await page.getByLabel("Cylinder 2 phase (degrees)").fill("720");
+  await page.getByRole("button", { name: "Apply for next start" }).click();
+
+  const validationAlert = page.getByRole("alert");
+  await expect(validationAlert).toHaveCount(1);
+  await expect(validationAlert).toContainText("2 invalid phases");
+  await expect(page.getByLabel("Cylinder 1 phase (degrees)")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(page.getByLabel("Cylinder 2 phase (degrees)")).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.id))
+    .toBe("cylinder-phase-1");
+});
+
+test("honors reduced motion without changing audio playback", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+  await instrumentLiveAnalyserActivity(page);
+
+  const reducedExplanation = page.locator(".visualization-reduced");
+  await expect(reducedExplanation).toBeVisible();
+  await expect(reducedExplanation).not.toHaveAttribute("role");
+  await expect(page.getByTestId("waveform-canvas")).toHaveCount(0);
+  await expect(page.getByTestId("spectrum-canvas")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await page.waitForTimeout(150);
+  expect(await visualizationCount(page, "__e2eTimeDomainReadCount")).toBe(0);
+  expect(await visualizationCount(page, "__e2eFrequencyReadCount")).toBe(0);
+
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});
+
 test("promotes a stopped four-cylinder pending configuration only after its next native handshake", async ({
   page,
 }) => {
@@ -817,7 +961,22 @@ test("deduplicates rapid starts and permits lifecycle restart without graph dupl
     await expect
       .poll(() => appLifecycleCount(page, "__e2eAppCleanupCount"))
       .toBe(1);
+    await expect
+      .poll(() =>
+        visibilityListenerCount(page, "__e2eVisibilityListenerAddCount"),
+      )
+      .toBe(2);
+    await expect
+      .poll(() =>
+        visibilityListenerCount(page, "__e2eVisibilityListenerRemoveCount"),
+      )
+      .toBe(1);
   }
+  await expect
+    .poll(() =>
+      visibilityListenerCount(page, "__e2eVisibilityListenerActiveCount"),
+    )
+    .toBe(1);
 
   // The production Nginx project does not perform the development-only
   // StrictMode remount, but exercises the same restart contract. Dispatching
@@ -907,4 +1066,92 @@ test("displays a typed processor error and recreates the product graph on retry"
     .toBe(2);
   await page.getByRole("button", { name: "Stop audio" }).click();
   await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});
+
+test("supports keyboard controls, explicit visibility resume, and processor recovery", async ({
+  page,
+}) => {
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+
+  // Configure without a pointer. This also verifies native labels provide the
+  // programmatic names keyboard and assistive-technology users depend on.
+  const preset = page.getByLabel("Engine preset");
+  await preset.focus();
+  await page.keyboard.press("End");
+  await expect(preset).toHaveValue("evenly-spaced-four-model");
+  const phase = page.getByLabel("Cylinder 4 phase (degrees)");
+  await phase.focus();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.type("539");
+  const apply = page.getByRole("button", { name: "Apply for next start" });
+  await apply.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("pending-config")).toHaveText(
+    "evenly-spaced-four-model",
+  );
+
+  const start = page.getByRole("button", { name: "Start audio" });
+  await start.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+
+  const throttle = page.getByLabel("Throttle");
+  await throttle.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(throttle).toHaveValue("0.01");
+  const mute = page.getByLabel("Mute audio");
+  await mute.focus();
+  await page.keyboard.press("Space");
+  await expect(mute).toBeChecked();
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(page.getByTestId("audio-status")).toHaveText("suspended");
+  await expect
+    .poll(() => audioGraphCount(page, "__e2eAudioContextSuspendCount"))
+    .toBe(1);
+  await expect(page.locator(".suspension-notice")).toContainText(
+    "Select Start audio to resume",
+  );
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: false,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(page.getByTestId("audio-status")).toHaveText("suspended");
+  await start.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+
+  await page.evaluate(() => {
+    const trackedWindow = window as typeof window & {
+      __e2eAudioWorkletNodes?: AudioWorkletNode[];
+    };
+    trackedWindow.__e2eAudioWorkletNodes
+      ?.at(-1)
+      ?.onprocessorerror?.(new ErrorEvent("processorerror"));
+  });
+  await expect(page.getByRole("alert")).toContainText(
+    "Audio error (processor-error)",
+  );
+  await start.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+
+  const stop = page.getByRole("button", { name: "Stop audio" });
+  await stop.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+  await expect
+    .poll(() => audioGraphCount(page, "__e2eAudioContextCount"))
+    .toBe(2);
 });

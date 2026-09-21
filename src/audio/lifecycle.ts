@@ -8,7 +8,11 @@ export type AudioLifecycleStatus =
   "idle" | "starting" | "running" | "stopping" | "suspended" | "error";
 
 export type AudioLifecycleEvent =
-  "start-requested" | "processor-ready" | "stop-requested" | "stopped";
+  | "start-requested"
+  | "processor-ready"
+  | "context-suspended"
+  | "stop-requested"
+  | "stopped";
 
 export type RejectedAudioLifecycleTransitionReason =
   "start-already-active" | "invalid-transition";
@@ -57,6 +61,11 @@ function getNextStatus(
   )
     return "starting";
   if (status === "starting" && event === "processor-ready") return "running";
+  if (
+    (status === "starting" || status === "running") &&
+    event === "context-suspended"
+  )
+    return "suspended";
   if (
     (status === "starting" ||
       status === "running" ||
