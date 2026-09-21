@@ -39,6 +39,7 @@
 | 23  | M6             | [V型/自動車 preset](023-v-and-automotive-presets.md)                | 17, 20, 22     | H          |
 | 24  | M6             | [drivetrain/gear](024-drivetrain-load-and-gear.md)                  | 6, 20, 23      | H          |
 | 25  | M3             | [Oxlint移行](025-oxlint-migration.md)                               | 4              | I          |
+| 26  | M1             | [Node 26 / TypeScript 7移行](026-node26-typescript7-toolchain.md)   | 4              | J          |
 
 ## DAG と並行レーン
 
@@ -72,6 +73,7 @@ flowchart LR
   T22[22] --> T23[23]
   T23[23] --> T24[24]
   T4[4] --> T25[25]
+  T4[4] --> T26[26]
 ```
 
-レーンAは基盤を直列に確定する。M2以降は、依存が verified になった時点で C/D や、M4の関連作業を部分的に並行化できる。レーンIは機能DAGと独立した開発基盤更新である。DAGにない共有ファイルを同時に編集する場合は、一方を小さな先行PRにする。
+レーンAは基盤を直列に確定する。M2以降は、依存が verified になった時点で C/D や、M4の関連作業を部分的に並行化できる。レーンIとJは機能DAGと独立した開発基盤更新である。Ticket 25は現在 blocked であり、Ticket 26は現行ESLint経路を前提にする。将来Ticket 25が verified になった場合だけそのlint経路を引き継ぐ。両チケットはlint依存を共有するため同時に実装しない。DAGにない共有ファイルを同時に編集する場合は、一方を小さな先行PRにする。
