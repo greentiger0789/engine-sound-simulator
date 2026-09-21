@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseEngineConfig } from "../../src/engine/config";
+import {
+  MAX_SUPPORTED_FIRING_EVENTS_PER_SECOND,
+  MAX_SUPPORTED_REDLINE_RPM,
+  parseEngineConfig,
+} from "../../src/engine/config";
 import { singleCylinderPreset } from "../../src/presets/single-cylinder";
 
 function validInput(): Record<string, unknown> {
@@ -118,6 +122,35 @@ describe("parseEngineConfig", () => {
       { rpm: 2000, torqueNm: 25 },
     ];
     expect(issuePaths(curve)).toContain("$.torqueCurve[1].rpm");
+  });
+
+  it("enforces the supported redline and aggregate firing-density ceilings", () => {
+    expect(MAX_SUPPORTED_REDLINE_RPM).toBe(12_000);
+    expect(MAX_SUPPORTED_FIRING_EVENTS_PER_SECOND).toBe(800);
+
+    const highRpm = validInput();
+    highRpm.redlineRpm = MAX_SUPPORTED_REDLINE_RPM + 1;
+    expect(issuePaths(highRpm)).toContain("$.redlineRpm");
+
+    const dense = validInput();
+    dense.redlineRpm = MAX_SUPPORTED_REDLINE_RPM;
+    dense.cycleDegrees = 180;
+    dense.cylinders = Array.from({ length: 4 }, (_, index) => ({
+      id: `dense-${index}`,
+      firingAngleDeg: index * 40,
+      bankId: "inline",
+      combustionStrength: 1,
+    }));
+    expect(issuePaths(dense)).toContain("$.cylinders");
+
+    dense.cycleDegrees = 360;
+    dense.cylinders = Array.from({ length: 4 }, (_, index) => ({
+      id: `boundary-${index}`,
+      firingAngleDeg: index * 90,
+      bankId: "inline",
+      combustionStrength: 1,
+    }));
+    expect(parseEngineConfig(dense).ok).toBe(true);
   });
 
   it("normalizes omitted M4 sound controls to compatible disabled defaults", () => {

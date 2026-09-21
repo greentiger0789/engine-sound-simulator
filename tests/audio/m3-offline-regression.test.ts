@@ -210,6 +210,7 @@ describe("M3 offline preset regression", () => {
       );
       const eventSampleIndices = new Int32Array(16);
       const eventSampleOffsets = new Float64Array(16);
+      const eventCylinderIndices = new Int32Array(16);
       const eventCount = generator.advanceRealtime(
         angularVelocities,
         angularVelocities.length,
@@ -217,6 +218,7 @@ describe("M3 offline preset regression", () => {
         0,
         eventSampleIndices,
         eventSampleOffsets,
+        eventCylinderIndices,
       );
       // The generator starts on a cycle boundary, so its first zero-degree
       // event is in cycle 1. Recover actual circular positions from the

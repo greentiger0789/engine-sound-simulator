@@ -354,7 +354,13 @@ export class RotationalDynamics {
     requireFinite("angular velocity", nextAngularVelocity);
     this.effectiveThrottleValue = nextEffectiveThrottle;
     this.effectiveLoadTorqueValue = nextEffectiveLoadTorque;
-    this.angularVelocity = Math.max(0, nextAngularVelocity);
+    // Redline is the hard simulation envelope, not only a limiter target.
+    // Clamping here prevents one extreme-but-finite 1 kHz torque step from
+    // exposing the downstream event/DSP path to an unsupported angular speed.
+    this.angularVelocity = Math.min(
+      rpmToRadPerSecond(this.config.redlineRpm),
+      Math.max(0, nextAngularVelocity),
+    );
   }
 
   public getState(): DynamicsState {

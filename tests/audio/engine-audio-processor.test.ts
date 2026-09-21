@@ -153,6 +153,158 @@ describe("EngineAudioProcessor", () => {
     },
   );
 
+  it("routes chronologically sorted firing events through their original banks", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const base = structuredClone(parallelTwin360Preset.config);
+    const snapshot = {
+      ...base,
+      cylinders: [
+        { ...base.cylinders[1]!, bankId: "right" },
+        { ...base.cylinders[0]!, bankId: "left" },
+      ],
+    };
+    const processor = new registeredProcessor!({
+      processorOptions: {
+        requestId: "two-banks",
+        config: { version: 1, snapshot },
+      },
+    });
+    const internal = processor as unknown as {
+      runtime: {
+        bankRouter: { routes: ReadonlyArray<{ bankId: string }> };
+        bankDsps: Array<{
+          getPulseState(): { triggeredPulseCount: number };
+        }>;
+      };
+    };
+
+    const first = render(
+      processor,
+      1_920,
+      new Float32Array([0]),
+      new Float32Array([1]),
+    );
+    expect(
+      internal.runtime.bankRouter.routes.map((route) => route.bankId),
+    ).toEqual(["right", "left"]);
+    // At 1,200 rpm the zero-degree left event fires immediately, while the
+    // 360-degree right event is still 2,400 frames away. Route order follows
+    // the deliberately reversed source array: right first, then left.
+    expect(
+      internal.runtime.bankDsps.map(
+        (dsp) => dsp.getPulseState().triggeredPulseCount,
+      ),
+    ).toEqual([0, 1]);
+    const second = render(
+      processor,
+      1_024,
+      new Float32Array([0]),
+      new Float32Array([1]),
+    );
+    expect(
+      internal.runtime.bankDsps.map(
+        (dsp) => dsp.getPulseState().triggeredPulseCount,
+      ),
+    ).toEqual([1, 1]);
+    expect([...first, ...second].every(Number.isFinite)).toBe(true);
+    expect(
+      Math.max(...first.map(Math.abs), ...second.map(Math.abs)),
+    ).toBeLessThanOrEqual(1);
+  });
+
+  it("records production callback time against the frame/sample-rate budget", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const processor = new registeredProcessor!(options("budget"));
+    render(processor, 128, new Float32Array([0.5]));
+    const meter = (
+      processor as unknown as {
+        runtime: {
+          budget: {
+            getSampleCount(): number;
+            getLastBudgetMs(): number;
+            getP99LoadRatio(): number;
+          };
+        };
+      }
+    ).runtime.budget;
+
+    expect(meter.getSampleCount()).toBe(1);
+    expect(meter.getLastBudgetMs()).toBeCloseTo(8 / 3, 12);
+    expect(meter.getP99LoadRatio()).toBeGreaterThan(0);
+  });
+
+  it("rejects unsupported redline density before replacing a healthy runtime", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const processor = new registeredProcessor!(options("supported"));
+    const beforeOutput = render(processor, 512, new Float32Array([0.5]));
+    const internal = processor as unknown as {
+      runtime: unknown;
+      faulted: boolean;
+    };
+    const healthyRuntime = internal.runtime;
+    const unsupported = {
+      ...structuredClone(singleCylinderPreset.config),
+      redlineRpm: 12_001,
+    };
+
+    processor.port.onmessage?.({
+      data: {
+        type: "replace-config",
+        requestId: "unsupported",
+        config: { version: 1, snapshot: unsupported },
+      },
+    } as MessageEvent);
+
+    expect(processor.port.messages.at(-1)).toMatchObject({
+      type: "config-rejected",
+      requestId: "unsupported",
+      message: expect.stringContaining("supported 12000 rpm ceiling"),
+    });
+    expect(internal.runtime).toBe(healthyRuntime);
+    expect(internal.faulted).toBe(false);
+    const afterOutput = render(processor, 512, new Float32Array([0.5]));
+    expect([...beforeOutput, ...afterOutput].every(Number.isFinite)).toBe(true);
+    expect(afterOutput.some((sample) => sample !== 0)).toBe(true);
+  });
+
+  it("keeps hostile finite torque and inertia inside the supported runtime envelope", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const base = structuredClone(singleCylinderPreset.config);
+    const hostile = {
+      ...base,
+      inertiaKgM2: 1e-100,
+      redlineRpm: 12_000,
+      torqueCurve: base.torqueCurve.map((point) => ({
+        ...point,
+        torqueNm: 1e100,
+      })),
+    };
+    const processor = new registeredProcessor!({
+      processorOptions: {
+        requestId: "hostile-finite",
+        config: { version: 1, snapshot: hostile },
+      },
+    });
+    const internal = processor as unknown as {
+      runtime: { dynamics: { getRpm(): number } };
+    };
+    const output = new Float32Array(1_280);
+    for (let start = 0; start < output.length; start += 128) {
+      output.set(render(processor, 128, new Float32Array([1])), start);
+    }
+
+    expect(internal.runtime.dynamics.getRpm()).toBeLessThanOrEqual(12_000);
+    expect([...output].every(Number.isFinite)).toBe(true);
+    expect(Math.max(...output.map(Math.abs))).toBeLessThanOrEqual(1);
+    expect(processor.port.messages).not.toContainEqual(
+      expect.objectContaining({ type: "fatal-error" }),
+    );
+  });
+
   it("treats scalar and a-rate throttle equivalently and accepts a mid-block opening", async () => {
     vi.stubGlobal("sampleRate", 48000);
     await import("../../src/audio/worklets/engine-audio-processor");
@@ -417,20 +569,23 @@ describe("EngineAudioProcessor", () => {
       limiterActive: boolean;
       runtime: {
         dynamics: { getState(): { driveTorqueMultiplier: number } };
-        dsp: { getPulseState(): { triggeredPulseCount: number } };
+        bankDsps: Array<{
+          getPulseState(): { triggeredPulseCount: number };
+        }>;
       };
     };
     for (let index = 0; index < 1000 && !internal.limiterActive; index += 1)
       render(processor, 128, new Float32Array([1]));
     expect(internal.limiterActive).toBe(true);
     expect(internal.runtime.dynamics.getState().driveTorqueMultiplier).toBe(0);
-    const before = internal.runtime.dsp.getPulseState().triggeredPulseCount;
+    const before =
+      internal.runtime.bankDsps[0]!.getPulseState().triggeredPulseCount;
     // The limiter state is sampled before each following frame's event mask,
     // matching the multiplier that advances that frame's dynamics boundary.
     render(processor, 1024, new Float32Array([1]));
-    expect(internal.runtime.dsp.getPulseState().triggeredPulseCount).toBe(
-      before,
-    );
+    expect(
+      internal.runtime.bankDsps[0]!.getPulseState().triggeredPulseCount,
+    ).toBe(before);
 
     for (let index = 0; index < 1000 && internal.limiterActive; index += 1)
       render(processor, 128, new Float32Array([0]));
@@ -438,7 +593,7 @@ describe("EngineAudioProcessor", () => {
     expect(internal.runtime.dynamics.getState().driveTorqueMultiplier).toBe(1);
     render(processor, 4096, new Float32Array([0]));
     expect(
-      internal.runtime.dsp.getPulseState().triggeredPulseCount,
+      internal.runtime.bankDsps[0]!.getPulseState().triggeredPulseCount,
     ).toBeGreaterThan(before);
   });
 });

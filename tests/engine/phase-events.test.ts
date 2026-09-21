@@ -53,6 +53,7 @@ function realtimeEventFields(
 ) {
   const sampleIndices = new Int32Array(256);
   const sampleOffsets = new Float64Array(256);
+  const cylinderIndices = new Int32Array(256);
   const result: Array<{ sampleIndex: number; sampleOffset: number }> = [];
   let start = 0;
   for (const length of partitions) {
@@ -63,6 +64,7 @@ function realtimeEventFields(
       start,
       sampleIndices,
       sampleOffsets,
+      cylinderIndices,
     );
     for (let event = 0; event < count; event += 1) {
       result.push({
@@ -336,6 +338,7 @@ describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
         0,
         new Int32Array(2),
         new Float64Array(2),
+        new Int32Array(2),
       ),
     ).toThrow("event density exceeds maxEventsPerSample");
     expect(densityLimited.getPhaseState()).toEqual(before);
@@ -359,6 +362,7 @@ describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
         0,
         new Int32Array(1),
         new Float64Array(1),
+        new Int32Array(1),
       ),
     ).toThrow("realtime event storage exceeded");
     expect([
@@ -367,6 +371,7 @@ describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
     ]).toEqual(storageBefore);
     const sampleIndices = new Int32Array(2);
     const sampleOffsets = new Float64Array(2);
+    const cylinderIndices = new Int32Array(2);
     expect(
       storageLimited.advanceRealtime(
         new Float64Array([(2 * Math.PI) / 360]),
@@ -375,10 +380,37 @@ describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
         0,
         sampleIndices,
         sampleOffsets,
+        cylinderIndices,
       ),
     ).toBe(2);
     expect([...sampleIndices]).toEqual([0, 0]);
     expect([...sampleOffsets]).toEqual([0, 0]);
+    expect([...cylinderIndices]).toEqual([0, 1]);
+  });
+
+  it("reports original cylinder indices after chronological event sorting", () => {
+    const generator = new FiringEventGenerator({
+      cycleDegrees: 720,
+      cylinders: [
+        { id: "late", firingAngleDeg: 360 },
+        { id: "early", firingAngleDeg: 0 },
+      ],
+    });
+    const sampleIndices = new Int32Array(2);
+    const sampleOffsets = new Float64Array(2);
+    const cylinderIndices = new Int32Array(2);
+    const count = generator.advanceRealtime(
+      new Float64Array([(400 * Math.PI) / 180]),
+      1,
+      1,
+      0,
+      sampleIndices,
+      sampleOffsets,
+      cylinderIndices,
+    );
+
+    expect(count).toBe(2);
+    expect([...cylinderIndices]).toEqual([1, 0]);
   });
 
   it("emits none at zero rpm and rejects invalid input atomically", () => {

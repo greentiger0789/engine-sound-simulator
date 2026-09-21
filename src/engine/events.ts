@@ -9,6 +9,10 @@ export interface FiringCylinder {
   readonly firingAngleDeg: number;
 }
 
+interface ValidatedFiringCylinder extends FiringCylinder {
+  readonly sourceIndex: number;
+}
+
 /** A firing crossing, positioned continuously in the input audio block. */
 export interface FiringEvent {
   readonly cylinderId: string;
@@ -65,7 +69,7 @@ function compareEvents(left: FiringEvent, right: FiringEvent): number {
 export class FiringEventGenerator {
   private phase: CrankPhaseIntegrator;
   private readonly preflightPhase: CrankPhaseIntegrator;
-  private readonly cylinders: readonly FiringCylinder[];
+  private readonly cylinders: readonly ValidatedFiringCylinder[];
   private readonly maxEventsPerSample: number;
   private nextFrame: number;
 
@@ -111,6 +115,7 @@ export class FiringEventGenerator {
     startFrame: number,
     sampleIndices: Int32Array,
     sampleOffsets: Float64Array,
+    cylinderIndices: Int32Array,
   ): number {
     if (
       !Number.isSafeInteger(length) ||
@@ -121,7 +126,10 @@ export class FiringEventGenerator {
     ) {
       throw new RangeError("invalid realtime frame range");
     }
-    if (sampleIndices.length !== sampleOffsets.length) {
+    if (
+      sampleIndices.length !== sampleOffsets.length ||
+      sampleIndices.length !== cylinderIndices.length
+    ) {
       throw new RangeError("realtime event storage lengths must match");
     }
     this.preflightRealtimeStorage(
@@ -180,6 +188,7 @@ export class FiringEventGenerator {
             1 - Number.EPSILON,
           ),
         );
+        cylinderIndices[count] = this.cylinders[nextCylinderIndex]!.sourceIndex;
         count += 1;
         previousFiring = nextFiring;
         previousCylinderIndex = nextCylinderIndex;
@@ -348,11 +357,11 @@ export class FiringEventGenerator {
 function validateCylinders(
   cylinders: readonly FiringCylinder[],
   cycleDegrees: number,
-): readonly FiringCylinder[] {
+): readonly ValidatedFiringCylinder[] {
   if (cylinders.length === 0)
     throw new RangeError("cylinders must not be empty");
   const ids = new Set<string>();
-  const result = cylinders.map((cylinder) => {
+  const result = cylinders.map((cylinder, sourceIndex) => {
     if (
       !cylinder ||
       typeof cylinder.id !== "string" ||
@@ -370,7 +379,11 @@ function validateCylinders(
     ) {
       throw new RangeError("firingAngleDeg must be in [0, cycleDegrees)");
     }
-    return { id: cylinder.id, firingAngleDeg: cylinder.firingAngleDeg };
+    return {
+      id: cylinder.id,
+      firingAngleDeg: cylinder.firingAngleDeg,
+      sourceIndex,
+    };
   });
   return result.sort((left, right) =>
     left.firingAngleDeg === right.firingAngleDeg

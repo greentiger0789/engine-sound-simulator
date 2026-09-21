@@ -70,6 +70,11 @@ export interface EngineConfigValidationIssue {
   readonly message: string;
 }
 
+/** Explicit real-time support ceiling used by presets and the AudioWorklet. */
+export const MAX_SUPPORTED_REDLINE_RPM = 12_000;
+/** Maximum aggregate firing crossings at redline for one applied snapshot. */
+export const MAX_SUPPORTED_FIRING_EVENTS_PER_SECOND = 800;
+
 export type EngineConfigParseResult =
   | { readonly ok: true; readonly value: EngineConfig }
   | {
@@ -202,8 +207,16 @@ export function parseEngineConfig(
     addIssue(issues, "$.idleRpm", "must be greater than zero");
   }
   const redlineRpm = readFiniteNumber(root.redlineRpm, "$.redlineRpm", issues);
-  if (redlineRpm !== undefined && redlineRpm <= 0) {
-    addIssue(issues, "$.redlineRpm", "must be greater than zero");
+  if (redlineRpm !== undefined) {
+    if (redlineRpm <= 0) {
+      addIssue(issues, "$.redlineRpm", "must be greater than zero");
+    } else if (redlineRpm > MAX_SUPPORTED_REDLINE_RPM) {
+      addIssue(
+        issues,
+        "$.redlineRpm",
+        `must not exceed the supported ${MAX_SUPPORTED_REDLINE_RPM} rpm ceiling`,
+      );
+    }
   }
   if (
     idleRpm !== undefined &&
@@ -227,6 +240,26 @@ export function parseEngineConfig(
     options,
     issues,
   );
+  if (
+    cylinders &&
+    cycleDegrees !== undefined &&
+    cycleDegrees > 0 &&
+    redlineRpm !== undefined &&
+    redlineRpm > 0
+  ) {
+    const firingEventsPerSecond =
+      ((redlineRpm / 60) * 360 * cylinders.length) / cycleDegrees;
+    if (
+      !Number.isFinite(firingEventsPerSecond) ||
+      firingEventsPerSecond > MAX_SUPPORTED_FIRING_EVENTS_PER_SECOND
+    ) {
+      addIssue(
+        issues,
+        "$.cylinders",
+        `redline firing density must not exceed ${MAX_SUPPORTED_FIRING_EVENTS_PER_SECOND} events per second`,
+      );
+    }
+  }
   const torqueCurve = parseTorqueCurve(root.torqueCurve, issues);
   const intake = parseIntake(root.intake, issues);
   const exhaust = parseExhaust(root.exhaust, issues);
@@ -248,6 +281,7 @@ export function parseEngineConfig(
     idleRpm <= 0 ||
     redlineRpm === undefined ||
     redlineRpm <= 0 ||
+    redlineRpm > MAX_SUPPORTED_REDLINE_RPM ||
     inertiaKgM2 === undefined ||
     inertiaKgM2 <= 0 ||
     !torqueCurve ||
