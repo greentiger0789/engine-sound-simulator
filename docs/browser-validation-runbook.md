@@ -7,7 +7,11 @@
 
 このアプリは回転と燃焼イベントから音を生成する。録音済みループの再生成功を
 確認する手順ではない。結果はチケット report の raw evidence に転記し、未実施の
-必須項目が一つでもあれば Ticket 20 を `verified` にしない。
+必須項目が一つでも未実施または失敗なら Ticket 20 を `verified` にしない。全 browser
+matrix セル、基準 run、wired / internal の可聴応答 trial が `pass` の場合だけ
+`verified` にできる。実施した必須項目が期待を満たさなければ検証結果を `fail` とし、
+不具合を修正して同じ条件で再実施するまでは report を
+`Status: manual-validation-pending`（外部要因で続行不能なら `Status: blocked`）に保つ。
 
 ## 実施前の固定条件
 
@@ -69,10 +73,11 @@ breakpoint を置けない、または値を安全に見られない browser で
 });
 ```
 
-これは app の挙動を変更しない観測方法である。`baseLatency` や `outputLatency` が
-未実装、`0`、または `undefined` の場合、欠損を補間したり OS の buffer size から
-算出したりしない。`sampleRate` は app context の実測値であり、Windows の format 表示
-だけで代替しない。
+これは app の値を書き換えない観測方法である。`baseLatency` や `outputLatency` が
+`0` の場合は raw 値 `0` と「browser reported 0; physical latency is not inferred」を記す。
+property が未実装、`undefined`、または安全に読み取れない場合だけ `not available` とする。
+欠損を補間したり OS の buffer size から算出したりしない。`sampleRate` は app context の
+実測値であり、Windows の format 表示だけで代替しない。
 
 ## Browser matrix
 
@@ -104,7 +109,9 @@ start` を押す。`Active` / `Pending` 表示を確認後、もう一度開始�
 
 Firefox では、AudioWorklet 利用可否、`outputLatency` の露出、suspend / resume、表示
 されたエラーを Chromium/Edge と同一であると仮定しない。異なる場合は feature difference
-欄に事実を書き、未対応なら `fail` 又は `not-tested` と理由を記す。
+欄に事実を書く。実行した Firefox で必須機能が未対応なら `fail` とする。Firefox 自体を
+起動できない、必要な device がないなど、検証を実施できなかった場合だけ `not-tested` と
+理由を記す。
 
 ## 基準機: 4 気筒・48 kHz・10 分
 
@@ -115,9 +122,10 @@ model`、開始から終了まで連続 10 分を満たすことが前提であ�
 中止時刻、変更内容、再試行の有無を記録する。
 
 1. `Evenly spaced four model` を停止中に Apply し、開始後に app context の sample rate
-   を確認する。throttle、Dyno load、Volume を記録する。推奨する固定負荷条件は
-   throttle `50 %`、Dyno load `20.0 N m`、mute off である。別条件を使う場合は理由を
-   書き、途中で操作した値と時刻を全て残す。
+   と UI の `Active: evenly-spaced-four-model` を確認して記録する。active が別構成なら
+   timer を開始せず `fail` とする。throttle、Dyno load、Volume を記録する。推奨する
+   固定負荷条件は throttle `50 %`、Dyno load `20.0 N m`、mute off である。別条件を使う
+   場合は理由を書き、途中で操作した値と時刻を全て残す。
 2. `Start audio` の実行時刻を秒まで記録して 10:00 を計時する。開始、2:00、5:00、
    8:00、10:00 で音切れ（瞬断、click、無音化、異常な連続音）、RPM 表示、status、
    Console の processor/worklet error を観測する。気付いた事象は発生時刻、継続時間、
@@ -147,8 +155,23 @@ model`、開始から終了まで連続 10 分を満たすことが前提であ�
 UI 入力から出力開始までを測る。波形を sample 単位まで拡大して、入力 click の開始と
 出力開始を読む。
 
-- raw evidence: 録音 file 名/ハッシュ、sample rate、mic と speaker の距離、各 trial の
-  `t_input`、`t_audible`、`t_audible - t_input`、最大値、判定を残す。
+入力 device は press と release の音を区別でき、checkbox が release で切り替わることを
+事前に確認する。`t_input` は DOM の click activation に対応する物理的な release 音の
+立ち上がりとする。DOM activation と対応づけられない touch device や無音 switch は使わず、
+方法、device、波形上の marker を記録する。
+
+`t_audible` は trial ごとに次の同じ規則で求める。入力前 500 ms の muted 区間から 1 ms
+RMS window の中央値を noise floor とする。normalized full scale を `1` としたとき、
+`max(noise floor * 4, 0.001)`（noise floor の 12 dB 上または -60 dBFS の高い方）を
+threshold とする。mute 解除後に、連続する 5 個の 1 ms window が threshold を超えた最初の
+window の先頭を `t_audible` とする。noise gate 等で noise floor が `0` でも threshold を
+`0` にしない。clipping、外来音、または threshold を満たす出力を得られない trial は
+選び直さず `not-tested` と理由を残して、条件を修正した別 trial と区別する。noise floor、
+threshold、window 長も raw evidence に記録する。
+
+- raw evidence: 録音 file 名/ハッシュ、sample rate、mic と speaker の距離、noise floor、
+  threshold、各 trial の `t_input`、`t_audible`、`t_audible - t_input`、最大値、判定を
+  残す。
 - 空気伝搬補正をする場合は距離と温度近似を記録し、補正前値と補正後値を併記する。
   10 cm なら伝搬は約 0.3 ms である。補正値だけを報告しない。
 - 3 trial 全てが補正前でも `<= 50 ms` なら `pass`、一つでも超過すれば `fail`、録音や
@@ -185,7 +208,7 @@ screenshot、profiler export はリポジトリに置く必要がある場合だ
 パスと hash を残す。
 
 ```text
-Status: manual-validation-pending | verified | fail
+Status: manual-validation-pending | verified | blocked
 Commit / URL:
 Operator / local date-time / timezone:
 Windows edition/build / power mode:
@@ -202,12 +225,13 @@ Matrix:
   Firefox: start=, stop=, preset apply=, error display=, feature difference=, raw notes=
 
 10-minute four-cylinder 48 kHz run:
+  observed active config:
   checkpoints / audible dropouts / processor errors:
   CPU / memory / profiler method and observations:
   pass|fail|not-tested and reason:
 
 Audible-response trials (wired/internal only):
-  recording method/file/hash/distance:
+  recording method/file/hash/distance/input marker/noise floor/threshold:
   trial 1: t_input=, t_audible=, raw delta=, corrected delta=, result=
   trial 2: t_input=, t_audible=, raw delta=, corrected delta=, result=
   trial 3: t_input=, t_audible=, raw delta=, corrected delta=, result=
@@ -222,4 +246,5 @@ Failures / reproduction / retest result:
 期待結果を満たさなかった場合で、再現手順、raw error、再検証結果を必ず残す。
 `not-tested` は未実施、必要な装置がない、または測定可能な証拠を取得できなかった場合で、
 理由と次に必要な手順を残す。HTTP 成功や headless 成功をいずれの host 項目の `pass` にも
-変換しない。
+変換しない。必須項目の `fail` は、修正後の同条件 retest が `pass` になるまで report の
+`verified` を禁止する。
