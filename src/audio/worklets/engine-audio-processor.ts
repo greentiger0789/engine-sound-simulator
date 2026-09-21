@@ -2,6 +2,8 @@ import { SingleCylinderPulseDsp } from "../dsp/single-cylinder-pulse";
 import { ExhaustResonatorDsp } from "../dsp/exhaust-resonator";
 import { IntakePathDsp } from "../dsp/intake-path";
 import { MechanicalOrdersDsp } from "../dsp/mechanical-orders";
+import { BlockBudgetMeter } from "../dsp/block-budget-meter";
+import { BankSignalRouter } from "../dsp/bank-signal-router";
 import { parseEngineConfig, type EngineConfig } from "../../engine/config";
 import { RotationalDynamics } from "../../engine/dynamics";
 import { FiringEventGenerator } from "../../engine/events";
@@ -28,10 +30,12 @@ interface EngineRuntime {
   readonly config: EngineConfig;
   readonly dynamics: RotationalDynamics;
   readonly events: FiringEventGenerator;
-  readonly dsp: SingleCylinderPulseDsp;
+  readonly bankRouter: BankSignalRouter;
+  readonly bankDsps: readonly SingleCylinderPulseDsp[];
   readonly exhaust: ExhaustResonatorDsp;
   readonly intake: IntakePathDsp;
   readonly mechanical: MechanicalOrdersDsp;
+  readonly budget: BlockBudgetMeter;
 }
 
 /** Audio-time integration of a validated one-to-four-cylinder snapshot. */
@@ -77,6 +81,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
   private readonly mechanicalRendered = new Float32Array(MAX_BLOCK_FRAMES);
   private readonly eventSampleIndices = new Int32Array(MAX_EVENTS_PER_BLOCK);
   private readonly eventSampleOffsets = new Float64Array(MAX_EVENTS_PER_BLOCK);
+  private readonly eventCylinderIndices = new Int32Array(MAX_EVENTS_PER_BLOCK);
 
   constructor(options?: AudioWorkletNodeOptions) {
     super(options);
@@ -99,11 +104,12 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       this.fatal("audio block exceeds supported frame capacity");
       return true;
     }
+    const runtime = this.runtime;
+    const processingStartedMs = this.performanceNowMs();
     try {
       const throttle = parameters.throttle;
       const gain = parameters.gain;
       const loadTorqueNm = parameters[ENGINE_AUDIO_LOAD_TORQUE_PARAM];
-      const runtime = this.runtime;
       const blockStartFrame = this.framesRendered;
       for (let frame = 0; frame < frameCount; frame += 1) {
         runtime.dynamics.setThrottle(
@@ -147,17 +153,34 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         blockStartFrame,
         this.eventSampleIndices,
         this.eventSampleOffsets,
+        this.eventCylinderIndices,
       );
       eventCount = this.removeLimitedEvents(eventCount);
-      runtime.dsp.processRealtime(
-        this.rendered,
-        frameCount,
+      runtime.bankRouter.clear(frameCount);
+      runtime.bankRouter.routeEvents(
         this.eventSampleIndices,
         this.eventSampleOffsets,
+        this.eventCylinderIndices,
         eventCount,
-        this.effectiveThrottle,
       );
-      if (runtime.dsp.isFaulted()) throw new RangeError("DSP fault");
+      for (
+        let routeIndex = 0;
+        routeIndex < runtime.bankRouter.routes.length;
+        routeIndex += 1
+      ) {
+        const route = runtime.bankRouter.routes[routeIndex]!;
+        const bankDsp = runtime.bankDsps[routeIndex]!;
+        bankDsp.processRealtime(
+          route.output,
+          frameCount,
+          route.eventSampleIndices,
+          route.eventSampleOffsets,
+          route.eventCount,
+          this.effectiveThrottle,
+        );
+        if (bankDsp.isFaulted()) throw new RangeError("DSP fault");
+      }
+      runtime.bankRouter.sumToMono(this.rendered, frameCount);
       runtime.exhaust.processRealtime(
         this.rendered,
         this.exhaustRendered,
@@ -201,6 +224,14 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       this.fatal(
         error instanceof Error ? error.message : "engine processor fault",
       );
+    } finally {
+      const processingEndedMs = this.performanceNowMs();
+      if (processingStartedMs !== null && processingEndedMs !== null) {
+        const elapsedMs = processingEndedMs - processingStartedMs;
+        if (Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+          runtime.budget.record(elapsedMs, frameCount, sampleRate);
+        }
+      }
     }
     return true;
   }
@@ -219,6 +250,18 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
             .join("; "),
         );
       const snapshot = parsed.value;
+      const bankRouter = new BankSignalRouter(
+        snapshot.cylinders,
+        MAX_BLOCK_FRAMES,
+        MAX_EVENTS_PER_BLOCK,
+      );
+      const bankDsps = bankRouter.routes.map(
+        () =>
+          new SingleCylinderPulseDsp({
+            sampleRate,
+            variation: snapshot.combustionVariation,
+          }),
+      );
       this.runtime = {
         config: snapshot,
         dynamics: new RotationalDynamics(snapshot),
@@ -226,10 +269,8 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
           cycleDegrees: snapshot.cycleDegrees,
           cylinders: snapshot.cylinders,
         }),
-        dsp: new SingleCylinderPulseDsp({
-          sampleRate,
-          variation: snapshot.combustionVariation,
-        }),
+        bankRouter,
+        bankDsps,
         exhaust: new ExhaustResonatorDsp({
           sampleRate,
           exhaust: snapshot.exhaust,
@@ -243,6 +284,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
           gain: snapshot.mechanical.gain,
           orders: snapshot.mechanical.orders,
         }),
+        budget: new BlockBudgetMeter(),
       };
       this.framesRendered = 0;
       this.telemetryFrameRemainder = 0;
@@ -296,6 +338,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       if (this.limiterMask[this.eventSampleIndices[index]!] === 0) {
         this.eventSampleIndices[write] = this.eventSampleIndices[index]!;
         this.eventSampleOffsets[write] = this.eventSampleOffsets[index]!;
+        this.eventCylinderIndices[write] = this.eventCylinderIndices[index]!;
         write += 1;
       }
     }
@@ -315,6 +358,13 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       throw new RangeError(`${name} must be finite and in [0, ${maximum}]`);
     }
     return value;
+  }
+
+  /** AudioWorkletGlobalScope does not expose Performance in every browser. */
+  private performanceNowMs(): number | null {
+    return globalThis.performance === undefined
+      ? null
+      : globalThis.performance.now();
   }
 
   private postTelemetry(

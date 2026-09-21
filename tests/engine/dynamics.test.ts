@@ -174,6 +174,25 @@ describe("RotationalDynamics", () => {
     }
   });
 
+  it("clamps an extreme finite torque step to the configured redline", () => {
+    const config = {
+      ...structuredClone(singleCylinderPreset.config),
+      inertiaKgM2: 1e-100,
+      torqueCurve: singleCylinderPreset.config.torqueCurve.map((point) => ({
+        ...point,
+        torqueNm: 1e100,
+      })),
+    };
+    const model = new RotationalDynamics(config);
+    model.setThrottle(1);
+    model.advanceFixedStep();
+
+    expect(model.getState().rpm).toBeCloseTo(config.redlineRpm, 10);
+    expect(model.getState().angularVelocityRadPerSec).toBe(
+      rpmToRadPerSecond(config.redlineRpm),
+    );
+  });
+
   it("rejects invalid call-boundary values and invalid engine configuration", () => {
     const model = dynamics();
     expect(() => model.setThrottle(-0.001)).toThrow(RangeError);
