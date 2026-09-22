@@ -5,7 +5,10 @@ import {
   MAX_SUPPORTED_REDLINE_RPM,
   parseEngineConfig,
 } from "../../src/engine/config";
-import { singleCylinderPreset } from "../../src/presets/single-cylinder";
+import {
+  singleCylinderPreset,
+  twoStrokeSingleCylinderPreset,
+} from "../../src/presets/single-cylinder";
 
 function validInput(): Record<string, unknown> {
   return structuredClone(singleCylinderPreset.config) as unknown as Record<
@@ -29,6 +32,21 @@ describe("parseEngineConfig", () => {
     expect(singleCylinderPreset.config.cylinders[0]?.firingAngleDeg).toBe(0);
     expect(singleCylinderPreset.metadata.valueSource).toBe("model-values");
     expect(singleCylinderPreset.metadata.description).toMatch(/not measured/i);
+  });
+
+  it("supports a 360-degree two-stroke cycle and bounds firing angles by that active cycle", () => {
+    expect(parseEngineConfig(twoStrokeSingleCylinderPreset.config)).toEqual({
+      ok: true,
+      value: twoStrokeSingleCylinderPreset.config,
+    });
+    expect(twoStrokeSingleCylinderPreset.config.cycleDegrees).toBe(360);
+
+    const outOfRange = structuredClone(
+      twoStrokeSingleCylinderPreset.config,
+    ) as unknown as Record<string, unknown>;
+    (outOfRange.cylinders as Array<Record<string, unknown>>)[0].firingAngleDeg =
+      360;
+    expect(issuePaths(outOfRange)).toContain("$.cylinders[0].firingAngleDeg");
   });
 
   it("accepts distinct cylinders at the same firing angle", () => {

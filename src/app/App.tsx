@@ -18,6 +18,7 @@ import type {
 import { multiCylinderPresets } from "../presets/multicylinder";
 import {
   singleCylinderPreset,
+  twoStrokeSingleCylinderPreset,
   type EnginePreset,
 } from "../presets/single-cylinder";
 import { EngineVisualizations } from "../components/EngineVisualizations";
@@ -26,6 +27,7 @@ let browserAudioController: AudioController | undefined;
 
 const availablePresets: readonly EnginePreset[] = [
   singleCylinderPreset,
+  twoStrokeSingleCylinderPreset,
   ...multiCylinderPresets,
 ];
 
@@ -40,6 +42,12 @@ function phaseIssue(
   return issues.find(
     (issue) => issue.path === `$.cylinders[${index}].firingAngleDeg`,
   )?.message;
+}
+
+function strokeCycleLabel(cycleDegrees: number): string {
+  if (cycleDegrees === 360) return "2-stroke · 360° cycle";
+  if (cycleDegrees === 720) return "4-stroke · 720° cycle";
+  return `${cycleDegrees}° cycle`;
 }
 
 function getBrowserAudioController(): AudioController {
@@ -433,7 +441,10 @@ export function App() {
           </label>
 
           <fieldset disabled={!canStageConfig}>
-            <legend>燃焼位相（720°周期）</legend>
+            <legend>燃焼位相（{draftConfig.cycleDegrees}°周期）</legend>
+            <p className="cycle-description" data-testid="draft-cycle">
+              {strokeCycleLabel(draftConfig.cycleDegrees)}
+            </p>
             {validationIssues.length > 0 ? (
               <p className="validation-summary" role="alert">
                 Configuration has {validationIssues.length} invalid phase
@@ -457,7 +468,9 @@ export function App() {
                       type="number"
                       inputMode="decimal"
                       min="0"
-                      max="719.999"
+                      max={String(
+                        Math.max(0, draftConfig.cycleDegrees - 0.001),
+                      )}
                       step="any"
                       value={phases[index] ?? ""}
                       onChange={(event) =>

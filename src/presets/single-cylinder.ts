@@ -49,5 +49,46 @@ export const singleCylinderPreset: EnginePreset = {
   },
 };
 
+/**
+ * A deliberately synthetic two-stroke reference model. Like the four-stroke
+ * preset above, its values are simulator parameters rather than measurements.
+ */
+export const twoStrokeSingleCylinderPreset: EnginePreset = {
+  metadata: {
+    name: "Two-stroke single-cylinder model",
+    valueSource: "model-values",
+    description:
+      "Synthetic two-stroke model values; not measured from or representative of a real vehicle.",
+  },
+  config: {
+    schemaVersion: 1,
+    id: "two-stroke-single-cylinder-model",
+    vehicleKind: "motorcycle",
+    cycleDegrees: 360,
+    cylinders: [
+      {
+        id: "cylinder-1",
+        firingAngleDeg: 0,
+        bankId: "single",
+        combustionStrength: 1,
+      },
+    ],
+    idleRpm: 1400,
+    redlineRpm: 8000,
+    inertiaKgM2: 0.08,
+    torqueCurve: [
+      { rpm: 0, torqueNm: 0 },
+      { rpm: 2500, torqueNm: 28 },
+      { rpm: 5500, torqueNm: 34 },
+      { rpm: 8000, torqueNm: 20 },
+    ],
+    intake: { noiseGain: 0.18, resonanceHz: 190 },
+    exhaust: { pipeLengthM: 1.1, damping: 0.16, mufflerAmount: 0.45 },
+    combustionVariation: { seed: 0x16c0ffee, amplitude: 0.06, width: 0.04 },
+    mechanical: { gain: 0.035, orders: [1, 2] },
+  },
+};
+
 export const SINGLE_CYLINDER_PRESET = singleCylinderPreset;
 export const singleCylinderEngineConfig = singleCylinderPreset.config;
+export const TWO_STROKE_SINGLE_CYLINDER_PRESET = twoStrokeSingleCylinderPreset;

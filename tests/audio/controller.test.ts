@@ -309,7 +309,7 @@ describe("AudioController", () => {
     expect(gain.calls).toContainEqual(["set", 1, 10]);
   });
 
-  it("stages only a valid stopped 720-degree snapshot without creating audio", () => {
+  it("stages valid stopped snapshots for 360-degree and 720-degree cycles without creating audio", () => {
     const controller = new AudioController();
     const source = { ...singleCylinderPreset.config, id: "staged" };
     const staged = controller.stageConfig(source);
@@ -323,12 +323,30 @@ describe("AudioController", () => {
     source.id = "mutated-after-stage";
     expect(controller.getSnapshot().pendingConfig?.id).toBe("staged");
 
-    const invalid = controller.stageConfig({
+    const twoStroke = controller.stageConfig({
       ...singleCylinderPreset.config,
+      id: "staged-two-stroke",
       cycleDegrees: 360,
     });
-    expect(invalid).toMatchObject({ ok: false, reason: "validation" });
-    expect(controller.getSnapshot().pendingConfig?.id).toBe("staged");
+    expect(twoStroke).toMatchObject({
+      ok: true,
+      value: { id: "staged-two-stroke", cycleDegrees: 360 },
+    });
+
+    const invalidBoundary = controller.stageConfig({
+      ...singleCylinderPreset.config,
+      cycleDegrees: 360,
+      cylinders: [
+        {
+          ...singleCylinderPreset.config.cylinders[0],
+          firingAngleDeg: 360,
+        },
+      ],
+    });
+    expect(invalidBoundary).toMatchObject({ ok: false, reason: "validation" });
+    expect(controller.getSnapshot().pendingConfig?.id).toBe(
+      "staged-two-stroke",
+    );
   });
 
   it("rejects staging while audio is active", async () => {
@@ -702,7 +720,10 @@ describe("AudioController", () => {
       id: "corrected-config",
     };
     expect(
-      controller.stageConfig({ ...corrected, cycleDegrees: 360 }),
+      controller.stageConfig({
+        ...corrected,
+        cylinders: [{ ...corrected.cylinders[0], firingAngleDeg: 720 }],
+      }),
     ).toMatchObject({ ok: false, reason: "validation" });
     expect(controller.getSnapshot()).toMatchObject({
       status: "error",

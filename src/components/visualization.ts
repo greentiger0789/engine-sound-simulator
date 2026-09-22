@@ -3,7 +3,7 @@ import type { EngineConfig } from "../engine/config";
 export interface FiringEventMarker {
   readonly id: string;
   readonly angleDeg: number;
-  /** Percentage offset in a fixed, four-stroke 720 degree cycle. */
+  /** Percentage offset in the applied engine cycle. */
   readonly positionPercent: number;
   readonly order: number;
   /** Compact label for the positioned marker; full details belong in the legend. */
@@ -60,12 +60,12 @@ export interface CanvasDrawingContext {
   lineWidth: number;
 }
 
-const CYCLE_DEGREES = 720;
 const MAX_CANVAS_DIMENSION = 16_384;
 // At the supported 320 px viewport the usable track can be about 204 px wide.
-// A 144-degree gap leaves room for a 1.5 rem marker even when the 0/720-degree
-// endpoint transform differs from the centered transform used in the middle.
-const MARKER_LANE_GAP_DEGREES = 144;
+// A gap of one fifth of the active cycle leaves room for a 1.5 rem marker even
+// when the endpoint transform differs from the centered transform used in the
+// middle. Keeping this proportional preserves the layout for 360° and 720°.
+const MARKER_LANE_GAP_RATIO = 0.2;
 const MAX_ANALYSER_BUFFER_LENGTH = 1 << 20;
 const MAX_DISPLAY_HZ = 30;
 
@@ -85,13 +85,19 @@ function positiveInteger(value: number): number {
 export function firingEventMarkers(
   config: EngineConfig,
 ): readonly FiringEventMarker[] {
+  const cycleDegrees =
+    Number.isFinite(config.cycleDegrees) && config.cycleDegrees > 0
+      ? config.cycleDegrees
+      : 0;
+  if (cycleDegrees === 0) return [];
+  const markerLaneGapDegrees = cycleDegrees * MARKER_LANE_GAP_RATIO;
   const sorted = config.cylinders
     .map((cylinder, order) => ({ ...cylinder, order }))
     .filter(
       (cylinder) =>
         Number.isFinite(cylinder.firingAngleDeg) &&
         cylinder.firingAngleDeg >= 0 &&
-        cylinder.firingAngleDeg < CYCLE_DEGREES,
+        cylinder.firingAngleDeg < cycleDegrees,
     )
     .sort(
       (left, right) =>
@@ -104,7 +110,7 @@ export function firingEventMarkers(
 
   return sorted.map(({ id, firingAngleDeg, order }) => {
     let lane = laneAngles.findIndex(
-      (lastAngle) => firingAngleDeg - lastAngle >= MARKER_LANE_GAP_DEGREES,
+      (lastAngle) => firingAngleDeg - lastAngle >= markerLaneGapDegrees,
     );
     if (lane === -1) {
       lane = laneAngles.length;
@@ -115,7 +121,7 @@ export function firingEventMarkers(
     return {
       id,
       angleDeg: firingAngleDeg,
-      positionPercent: (firingAngleDeg / CYCLE_DEGREES) * 100,
+      positionPercent: (firingAngleDeg / cycleDegrees) * 100,
       order,
       shortLabel: `C${order + 1}`,
       lane,

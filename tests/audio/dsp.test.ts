@@ -120,32 +120,38 @@ describe("SingleCylinderPulseDsp", () => {
     },
   );
 
-  it("has one responsive analytic pulse for each 6000 rpm four-stroke event", () => {
-    const sampleRate = 48_000;
-    const events = new FiringEventGenerator({
-      cycleDegrees: 720,
-      cylinders: [{ id: "single", firingAngleDeg: 0 }],
-    }).advanceSamples(
-      new Float64Array(sampleRate).fill(rpmToRadPerSecond(6_000)),
-      sampleRate,
-    );
-    expect(events).toHaveLength(50);
-    const renderAndCount = (sequence: readonly FiringEvent[]): number => {
-      const dsp = new SingleCylinderPulseDsp({ sampleRate });
-      for (const block of blocksFor(sampleRate, [128], sequence, () => 0.8)) {
-        dsp.process({
-          output: new Float32Array(block.frames),
-          events: block.events,
-          load: block.load,
-        });
-      }
-      return dsp.getPulseState().triggeredPulseCount;
-    };
-    expect(renderAndCount(events)).toBe(50);
-    // Overlapping tails cannot fabricate a trigger: omitting one event is
-    // observable even though surrounding output windows still contain energy.
-    expect(renderAndCount(events.slice(0, -1))).toBe(49);
-  });
+  it.each([
+    [360, 100],
+    [720, 50],
+  ])(
+    "has one responsive analytic pulse per 6000 rpm event regardless of a %i-degree cycle",
+    (cycleDegrees, expectedEventCount) => {
+      const sampleRate = 48_000;
+      const events = new FiringEventGenerator({
+        cycleDegrees,
+        cylinders: [{ id: "single", firingAngleDeg: 0 }],
+      }).advanceSamples(
+        new Float64Array(sampleRate).fill(rpmToRadPerSecond(6_000)),
+        sampleRate,
+      );
+      expect(events).toHaveLength(expectedEventCount);
+      const renderAndCount = (sequence: readonly FiringEvent[]): number => {
+        const dsp = new SingleCylinderPulseDsp({ sampleRate });
+        for (const block of blocksFor(sampleRate, [128], sequence, () => 0.8)) {
+          dsp.process({
+            output: new Float32Array(block.frames),
+            events: block.events,
+            load: block.load,
+          });
+        }
+        return dsp.getPulseState().triggeredPulseCount;
+      };
+      expect(renderAndCount(events)).toBe(expectedEventCount);
+      // Overlapping tails cannot fabricate a trigger: omitting one event is
+      // observable even though surrounding output windows still contain energy.
+      expect(renderAndCount(events.slice(0, -1))).toBe(expectedEventCount - 1);
+    },
+  );
 
   it("is deterministic, responds to within-sample offsets, and is partition invariant", () => {
     const totalFrames = 8_003;
