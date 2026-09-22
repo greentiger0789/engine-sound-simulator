@@ -32,6 +32,7 @@ down:
 
 build:
 	docker compose build build web
+	./scripts/verify-web-image.sh "$$(docker compose config --images web)"
 
 test:
 	docker compose run --build --rm tools npm run test

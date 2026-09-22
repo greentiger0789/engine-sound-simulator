@@ -70,6 +70,10 @@ Composeサービスを停止します。
 自動回帰を日常の受け入れに使います。Edge / Firefox、長時間負荷、物理遅延の
 詳細測定は、本格的な公開を計画した時点で実施します。
 
+本番配信はまだ外部公開していません。HTTPS / AudioWorklet、イメージ識別、
+rollout / rollback と、未決の hosting・ライセンスの判断手順は
+[本番配信・ホスティング判断ランブック](docs/production-deployment-runbook.md)を参照してください。
+
 ## 開発と運用
 
 - [番号付きチケット一覧](docs/tickets/README.md)
