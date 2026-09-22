@@ -654,6 +654,54 @@ test("stages preset phase edits from the keyboard without creating audio", async
     .toBe(0);
 });
 
+test("applies a stopped two-stroke 360-degree configuration and starts it", async ({
+  page,
+}) => {
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+
+  await page
+    .getByLabel("Engine preset")
+    .selectOption("two-stroke-single-cylinder-model");
+  await expect(page.getByText("燃焼位相（360°周期）")).toBeVisible();
+  await expect(page.getByTestId("draft-cycle")).toHaveText(
+    "2-stroke · 360° cycle",
+  );
+  const phase = page.getByLabel("Cylinder 1 phase (degrees)");
+  await expect(phase).toHaveAttribute("max", "359.999");
+
+  await phase.fill("360");
+  await page.getByRole("button", { name: "Apply for next start" }).click();
+  await expect(phase).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("must be in [0, 360)")).toBeVisible();
+
+  await phase.fill("0");
+  await page.getByRole("button", { name: "Apply for next start" }).click();
+  await expect(page.getByTestId("pending-config")).toHaveText(
+    "two-stroke-single-cylinder-model",
+  );
+  await expect(page.getByRole("button", { name: "Start audio" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await expect(page.getByTestId("active-config")).toHaveText(
+    "two-stroke-single-cylinder-model",
+  );
+  await expect(
+    page.getByRole("region", { name: "360 degree firing events" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "360° firing events" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("firing-event-strip")).toHaveAttribute(
+    "data-cycle-degrees",
+    "360",
+  );
+
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});
+
 test("announces multiple invalid phases once and focuses the first invalid field", async ({
   page,
 }) => {

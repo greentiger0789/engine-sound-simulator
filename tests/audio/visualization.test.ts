@@ -171,6 +171,26 @@ describe("visualization helpers", () => {
     );
   });
 
+  it("uses the active 360-degree cycle for marker positions and boundaries", () => {
+    const config = fixtureConfig();
+    config.cycleDegrees = 360;
+    config.cylinders = [
+      { id: "start", firingAngleDeg: 0, bankId: "a", combustionStrength: 1 },
+      {
+        id: "middle",
+        firingAngleDeg: 180,
+        bankId: "a",
+        combustionStrength: 1,
+      },
+      { id: "end", firingAngleDeg: 360, bankId: "a", combustionStrength: 1 },
+    ];
+
+    expect(firingEventMarkers(config)).toMatchObject([
+      { id: "start", positionPercent: 0 },
+      { id: "middle", positionPercent: 50 },
+    ]);
+  });
+
   it("sizes a canvas for DPR and does not change stable dimensions", () => {
     const canvas = { clientWidth: 200, clientHeight: 100, width: 0, height: 0 };
 

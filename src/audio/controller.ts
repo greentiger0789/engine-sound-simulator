@@ -293,7 +293,8 @@ export class AudioController {
 
   /**
    * Validates and stages an editor snapshot without touching browser audio.
-   * The editor is intentionally a 720 degree, four-stroke-only surface.
+   * The editor accepts any cycle supported by the shared configuration
+   * validator; firing angles remain bounded by that active cycle.
    */
   stageConfig(input: unknown): ConfigStageResult {
     const recoveringRejectedConfig =
@@ -307,17 +308,8 @@ export class AudioController {
       return { ok: false, reason: "audio-active" };
     }
     const parsed = parseEngineConfig(input, { maxCylinders: 4 });
-    const issues: EngineConfigValidationIssue[] = parsed.ok
-      ? []
-      : [...parsed.issues];
-    if (parsed.ok && parsed.value.cycleDegrees !== 720) {
-      issues.push({
-        path: "$.cycleDegrees",
-        message: "must be 720 for the four-stroke editor",
-      });
-    }
-    if (!parsed.ok || issues.length > 0) {
-      return { ok: false, reason: "validation", issues };
+    if (!parsed.ok) {
+      return { ok: false, reason: "validation", issues: parsed.issues };
     }
     // parseEngineConfig constructs a new typed object, so this is detached
     // from the caller's untrusted object before it becomes observable state.

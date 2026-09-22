@@ -27,6 +27,17 @@ function blocks(total: number): number[] {
   return result;
 }
 
+function irregularWorkletBlocks(total: number): number[] {
+  const result: number[] = [];
+  const pattern = [128, 64, 256, 127];
+  for (let remaining = total, index = 0; remaining > 0; index += 1) {
+    const size = Math.min(remaining, pattern[index % pattern.length] as number);
+    result.push(size);
+    remaining -= size;
+  }
+  return result;
+}
+
 function continuousEventFields(events: readonly FiringEvent[]) {
   return events.map(
     ({
@@ -140,6 +151,142 @@ describe("CrankPhaseIntegrator and FiringEventGenerator", () => {
       expect(events.map((event) => event.absoluteFrame)).toEqual(
         Array.from({ length: 50 }, (_, index) => (index * sampleRate) / 50),
       );
+    }
+  });
+
+  it.each([
+    [360, 100],
+    [720, 50],
+  ])(
+    "a %i-degree cycle emits exactly %i single-cylinder events per second at 6000 rpm",
+    (cycleDegrees, expectedEventsPerSecond) => {
+      for (const sampleRate of [44_100, 48_000]) {
+        const events = new FiringEventGenerator({
+          cycleDegrees,
+          cylinders: [{ id: "one", firingAngleDeg: 0 }],
+        }).advanceSamples(
+          new Float64Array(sampleRate).fill(SIX_THOUSAND_RPM),
+          sampleRate,
+        );
+        expect(events, `${sampleRate} Hz`).toHaveLength(
+          expectedEventsPerSecond,
+        );
+      }
+    },
+  );
+
+  it.each([
+    [360, 100],
+    [720, 50],
+  ])(
+    "advanceRealtime emits %i-degree-cycle crossings at %i events per second across irregular worklet blocks",
+    (cycleDegrees, expectedEventsPerSecond) => {
+      for (const sampleRate of [44_100, 48_000]) {
+        const options = {
+          cycleDegrees,
+          cylinders: [{ id: "one", firingAngleDeg: 0 }],
+        } as const;
+        const velocities = new Float64Array(sampleRate).fill(SIX_THOUSAND_RPM);
+        const checkedGenerator = new FiringEventGenerator(options);
+        const checked = checkedGenerator.advanceSamples(velocities, sampleRate);
+        const realtimeGenerator = new FiringEventGenerator(options);
+        const realtime = realtimeEventFields(
+          realtimeGenerator,
+          velocities,
+          sampleRate,
+          irregularWorkletBlocks(sampleRate),
+        );
+
+        expect(realtime).toHaveLength(expectedEventsPerSecond);
+        expect(realtime).toEqual(
+          Array.from({ length: expectedEventsPerSecond }, (_, index) => ({
+            sampleIndex: (index * sampleRate) / expectedEventsPerSecond,
+            sampleOffset: 0,
+          })),
+        );
+        expect(realtime).toEqual(
+          checked.map(({ sampleIndex, sampleOffset }) => ({
+            sampleIndex,
+            sampleOffset,
+          })),
+        );
+        expect(realtimeGenerator.getPhaseState()).toEqual(
+          checkedGenerator.getPhaseState(),
+        );
+        expect(realtimeGenerator.getNextFrame()).toBe(sampleRate);
+      }
+    },
+  );
+
+  it("emits every 360-degree boundary exactly once", () => {
+    const events = new FiringEventGenerator({
+      cycleDegrees: 360,
+      cylinders: [{ id: "one", firingAngleDeg: 0 }],
+      initialPhaseDegrees: 359,
+    }).advanceSamples(new Float64Array(722).fill(Math.PI / 180), 1);
+
+    expect(
+      events.map(
+        ({ cycleIndex, sampleIndex, sampleOffset, absoluteFrame }) => ({
+          cycleIndex,
+          sampleIndex,
+          sampleOffset,
+          absoluteFrame,
+        }),
+      ),
+    ).toEqual([
+      { cycleIndex: 1, sampleIndex: 1, sampleOffset: 0, absoluteFrame: 1 },
+      {
+        cycleIndex: 2,
+        sampleIndex: 361,
+        sampleOffset: 0,
+        absoluteFrame: 361,
+      },
+      {
+        cycleIndex: 3,
+        sampleIndex: 721,
+        sampleOffset: 0,
+        absoluteFrame: 721,
+      },
+    ]);
+  });
+
+  it("advanceRealtime emits every 360-degree boundary exactly once across irregular worklet blocks", () => {
+    const expected = [
+      { sampleIndex: 1, sampleOffset: 0 },
+      { sampleIndex: 361, sampleOffset: 0 },
+      { sampleIndex: 721, sampleOffset: 0 },
+    ];
+    for (const sampleRate of [44_100, 48_000]) {
+      const options = {
+        cycleDegrees: 360,
+        cylinders: [{ id: "one", firingAngleDeg: 0 }],
+        initialPhaseDegrees: 359,
+      } as const;
+      const velocities = new Float64Array(722).fill(
+        (sampleRate * 2 * Math.PI) / 360,
+      );
+      const checkedGenerator = new FiringEventGenerator(options);
+      const checked = checkedGenerator.advanceSamples(velocities, sampleRate);
+      const realtimeGenerator = new FiringEventGenerator(options);
+      const realtime = realtimeEventFields(
+        realtimeGenerator,
+        velocities,
+        sampleRate,
+        irregularWorkletBlocks(velocities.length),
+      );
+
+      expect(realtime).toEqual(expected);
+      expect(realtime).toEqual(
+        checked.map(({ sampleIndex, sampleOffset }) => ({
+          sampleIndex,
+          sampleOffset,
+        })),
+      );
+      expect(realtimeGenerator.getPhaseState()).toEqual(
+        checkedGenerator.getPhaseState(),
+      );
+      expect(realtimeGenerator.getNextFrame()).toBe(velocities.length);
     }
   });
 

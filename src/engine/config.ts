@@ -47,6 +47,11 @@ export interface EngineConfig {
   readonly schemaVersion: 1;
   readonly id: string;
   readonly vehicleKind: string;
+  /**
+   * Active combustion cycle length. Every positive finite value is supported;
+   * presets use 360 degrees for two-stroke and 720 degrees for four-stroke
+   * models. Firing angles are always relative to this active cycle.
+   */
   readonly cycleDegrees: number;
   readonly cylinders: readonly CylinderConfig[];
   readonly idleRpm: number;

@@ -49,6 +49,7 @@ export function EngineVisualizations({
     () => firingEventMarkers(activeConfig),
     [activeConfig],
   );
+  const cycleDegrees = activeConfig.cycleDegrees;
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -121,10 +122,14 @@ export function EngineVisualizations({
     >
       <section
         className="firing-event-strip"
-        aria-label="720 degree firing events"
+        aria-label={`${cycleDegrees} degree firing events`}
       >
-        <h2>720° firing events</h2>
-        <ol className="firing-event-track" data-testid="firing-event-strip">
+        <h2>{cycleDegrees}° firing events</h2>
+        <ol
+          className="firing-event-track"
+          data-testid="firing-event-strip"
+          data-cycle-degrees={cycleDegrees}
+        >
           {events.map((event) => (
             <li
               key={`${event.id}-${event.order}`}

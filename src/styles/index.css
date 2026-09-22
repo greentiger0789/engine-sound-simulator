@@ -242,11 +242,14 @@ select:focus-visible {
 .phase-control {
   display: grid;
   gap: 0.35rem;
+  min-width: 0;
   font-weight: 600;
 }
 
 .select-control select,
 .phase-control input {
+  max-width: 100%;
+  min-width: 0;
   min-height: 2.5rem;
   padding: 0.45rem 0.6rem;
   border: 1px solid #607385;
@@ -258,6 +261,7 @@ select:focus-visible {
 .config-editor fieldset {
   display: grid;
   gap: 0.75rem;
+  min-inline-size: 0;
   margin: 0;
   padding: 0.85rem;
   border: 1px solid #344251;
@@ -274,6 +278,12 @@ select:focus-visible {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
   gap: 0.75rem;
+}
+
+.cycle-description {
+  margin: 0;
+  color: #b6c2cf;
+  font-size: 0.875rem;
 }
 
 .phase-control input[aria-invalid="true"] {
@@ -330,10 +340,10 @@ select:focus-visible {
 
 .firing-event-track::after {
   right: 0;
-  content: "720°";
+  content: attr(data-cycle-degrees) "°";
 }
 
-.firing-event-track li {
+.firing-event-track > li[data-testid="firing-event"] {
   position: absolute;
   top: calc(0.2rem + var(--event-lane) * 1.6rem);
   left: var(--event-position);
