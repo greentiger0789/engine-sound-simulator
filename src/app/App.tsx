@@ -186,6 +186,10 @@ export function App() {
         target.isContentEditable
       );
     };
+    const isSpaceActivatedControl = (target: EventTarget | null) =>
+      target instanceof HTMLElement &&
+      !target.closest(".hold-throttle") &&
+      Boolean(target.closest("button, summary, a, [role='button']"));
     const keyDown = (event: KeyboardEvent) => {
       if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
         if (clutchBeforeKeyboard.current !== null) controller.setClutch(0);
@@ -232,7 +236,11 @@ export function App() {
         controller.setDrivetrainGear(nextGear);
         return;
       }
-      if (event.code === "Space" && !isEditingText(event.target)) {
+      if (
+        event.code === "Space" &&
+        !isEditingText(event.target) &&
+        !isSpaceActivatedControl(event.target)
+      ) {
         event.preventDefault();
         holdingKeyboardThrottle.current = true;
         syncHoldThrottle();
@@ -365,439 +373,503 @@ export function App() {
   return (
     <main className="app-shell">
       <section aria-labelledby="app-title" className="controller-area">
-        <header>
-          <p className="eyebrow">Procedural audio</p>
-          <h1 id="app-title">Engine sound simulator</h1>
-          <p className="intro">
-            Start audio when you are ready. The simulator is silent until then.
-          </p>
-        </header>
-
-        <div className="transport" aria-label="Audio transport">
-          <button
-            type="button"
-            onClick={start}
-            disabled={isStartingOrRunning}
-            aria-describedby={
-              snapshot.status === "suspended"
-                ? "transport-help suspension-notice"
-                : "transport-help"
-            }
-          >
-            Start audio
-          </button>
-          <button type="button" onClick={stop} disabled={!canStop}>
-            Stop audio
-          </button>
+        <div className="dashboard-header">
+          <header>
+            <p className="eyebrow">Procedural audio</p>
+            <h1 id="app-title">Engine sound simulator</h1>
+            <p className="intro">
+              Start audio when you are ready. The simulator is silent until
+              then.
+            </p>
+          </header>
         </div>
-        <p className="sr-only" id="transport-help">
-          Starting audio requires an explicit action. If audio is paused while
-          this page is hidden, select Start audio to resume it.
-        </p>
-        {snapshot.status === "suspended" ? (
-          <p className="suspension-notice" id="suspension-notice">
-            Audio is paused. Select Start audio to resume; returning to this
-            page does not restart audio automatically.
-          </p>
-        ) : null}
-
-        <div className="control-stack">
-          <label className="drivetrain-control" htmlFor="drivetrain-gear">
-            <span>Gear</span>
-            <select
-              id="drivetrain-gear"
-              aria-describedby="drivetrain-keyboard-help"
-              value={snapshot.drivetrainGear}
-              onChange={(event) =>
-                controller.setDrivetrainGear(Number(event.target.value))
+        <div className="dashboard-controls">
+          <div className="transport" aria-label="Audio transport">
+            <button
+              type="button"
+              onClick={start}
+              disabled={isStartingOrRunning}
+              aria-describedby={
+                snapshot.status === "suspended"
+                  ? "transport-help suspension-notice"
+                  : "transport-help"
               }
             >
-              {snapshot.drivetrainConfig.gearRatios
-                .map((_, index) => (index === 0 ? 1 : index === 1 ? 0 : index))
-                .map((index) => (
-                  <option key={index} value={index}>
-                    {index === 0
-                      ? "Neutral"
-                      : `${index}${gearOrdinal(index)} gear`}
-                  </option>
-                ))}
-            </select>
-          </label>
+              Start audio
+            </button>
+            <button type="button" onClick={stop} disabled={!canStop}>
+              Stop audio
+            </button>
+          </div>
+          <p className="sr-only" id="transport-help">
+            Starting audio requires an explicit action. If audio is paused while
+            this page is hidden, select Start audio to resume it.
+          </p>
+          {snapshot.status === "suspended" ? (
+            <p className="suspension-notice" id="suspension-notice">
+              Audio is paused. Select Start audio to resume; returning to this
+              page does not restart audio automatically.
+            </p>
+          ) : null}
 
-          <label className="range-control" htmlFor="clutch">
-            <span>Clutch engagement</span>
-            <input
-              id="clutch"
-              aria-describedby="drivetrain-keyboard-help"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={snapshot.clutch}
-              aria-valuetext={`${Math.round(snapshot.clutch * 100)} percent engaged`}
-              onChange={(event) => {
-                const coupling = Number(event.target.value);
-                if (clutchBeforeKeyboard.current !== null) {
-                  clutchBeforeKeyboard.current = coupling;
-                  controller.setClutch(controller.getSnapshot().clutch);
-                } else {
-                  controller.setClutch(coupling);
+          <div className="control-stack">
+            <label className="drivetrain-control" htmlFor="drivetrain-gear">
+              <span>Gear</span>
+              <select
+                id="drivetrain-gear"
+                aria-describedby="drivetrain-keyboard-help"
+                value={snapshot.drivetrainGear}
+                onChange={(event) =>
+                  controller.setDrivetrainGear(Number(event.target.value))
+                }
+              >
+                {snapshot.drivetrainConfig.gearRatios
+                  .map((_, index) =>
+                    index === 0 ? 1 : index === 1 ? 0 : index,
+                  )
+                  .map((index) => (
+                    <option key={index} value={index}>
+                      {index === 0
+                        ? "Neutral"
+                        : `${index}${gearOrdinal(index)} gear`}
+                    </option>
+                  ))}
+              </select>
+            </label>
+
+            <label className="range-control" htmlFor="clutch">
+              <span>Clutch engagement</span>
+              <input
+                id="clutch"
+                aria-describedby="drivetrain-keyboard-help"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={snapshot.clutch}
+                aria-valuetext={`${Math.round(snapshot.clutch * 100)} percent engaged`}
+                onChange={(event) => {
+                  const coupling = Number(event.target.value);
+                  if (clutchBeforeKeyboard.current !== null) {
+                    clutchBeforeKeyboard.current = coupling;
+                    controller.setClutch(controller.getSnapshot().clutch);
+                  } else {
+                    controller.setClutch(coupling);
+                  }
+                }}
+              />
+              <output htmlFor="clutch" data-testid="clutch-value">
+                {Math.round(snapshot.clutch * 100)}%
+              </output>
+            </label>
+
+            <label className="range-control" htmlFor="volume">
+              <span>Volume</span>
+              <input
+                id="volume"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={snapshot.volume}
+                aria-valuetext={`${Math.round(snapshot.volume * 100)} percent`}
+                onChange={(event) =>
+                  controller.setVolume(Number(event.target.value))
+                }
+              />
+              <output htmlFor="volume">
+                {Math.round(snapshot.volume * 100)}%
+              </output>
+            </label>
+
+            <label className="range-control" htmlFor="throttle">
+              <span>Throttle</span>
+              <input
+                id="throttle"
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={snapshot.throttle}
+                aria-valuetext={`${Math.round(snapshot.throttle * 100)} percent`}
+                onChange={(event) =>
+                  controller.setThrottle(Number(event.target.value))
+                }
+              />
+              <output htmlFor="throttle" data-testid="throttle-value">
+                {Math.round(snapshot.throttle * 100)}%
+              </output>
+            </label>
+
+            <label className="number-control" htmlFor="throttle-percent">
+              <span>Opening percentage</span>
+              <input
+                id="throttle-percent"
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                inputMode="numeric"
+                value={Math.round(snapshot.throttle * 100)}
+                aria-valuetext={`${Math.round(snapshot.throttle * 100)} percent opening`}
+                onChange={(event) =>
+                  controller.setThrottle(Number(event.target.value) / 100)
+                }
+              />
+              <span aria-hidden="true">%</span>
+            </label>
+
+            <button
+              type="button"
+              className="hold-throttle"
+              aria-label="Hold accelerator"
+              onPointerDown={holdPointerThrottle}
+              onPointerMove={(event) => {
+                if (event.pointerType !== "touch") return;
+                if (holdingPointerId.current !== event.pointerId) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                if (
+                  event.clientX < bounds.left ||
+                  event.clientX > bounds.right ||
+                  event.clientY < bounds.top ||
+                  event.clientY > bounds.bottom
+                ) {
+                  releasePointerThrottle(event.pointerId);
                 }
               }}
-            />
-            <output htmlFor="clutch" data-testid="clutch-value">
-              {Math.round(snapshot.clutch * 100)}%
-            </output>
-          </label>
-
-          <label className="range-control" htmlFor="volume">
-            <span>Volume</span>
-            <input
-              id="volume"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={snapshot.volume}
-              aria-valuetext={`${Math.round(snapshot.volume * 100)} percent`}
-              onChange={(event) =>
-                controller.setVolume(Number(event.target.value))
+              onPointerUp={(event) => releasePointerThrottle(event.pointerId)}
+              onPointerCancel={(event) =>
+                releasePointerThrottle(event.pointerId)
               }
-            />
-            <output htmlFor="volume">
-              {Math.round(snapshot.volume * 100)}%
-            </output>
-          </label>
-
-          <label className="range-control" htmlFor="throttle">
-            <span>Throttle</span>
-            <input
-              id="throttle"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={snapshot.throttle}
-              aria-valuetext={`${Math.round(snapshot.throttle * 100)} percent`}
-              onChange={(event) =>
-                controller.setThrottle(Number(event.target.value))
+              onLostPointerCapture={(event) =>
+                releasePointerThrottle(event.pointerId)
               }
-            />
-            <output htmlFor="throttle" data-testid="throttle-value">
-              {Math.round(snapshot.throttle * 100)}%
-            </output>
-          </label>
+            >
+              Hold accelerator (Space)
+            </button>
 
-          <label className="number-control" htmlFor="throttle-percent">
-            <span>Opening percentage</span>
-            <input
-              id="throttle-percent"
-              type="number"
-              min="0"
-              max="100"
-              step="1"
-              inputMode="numeric"
-              value={Math.round(snapshot.throttle * 100)}
-              aria-valuetext={`${Math.round(snapshot.throttle * 100)} percent opening`}
-              onChange={(event) =>
-                controller.setThrottle(Number(event.target.value) / 100)
-              }
-            />
-            <span aria-hidden="true">%</span>
-          </label>
+            <label className="range-control" htmlFor="dyno-load">
+              <span>Dyno load</span>
+              <input
+                id="dyno-load"
+                type="range"
+                min="0"
+                max={MAX_LOAD_TORQUE_NM}
+                step="0.1"
+                value={snapshot.loadTorqueNm}
+                aria-valuetext={`${snapshot.loadTorqueNm.toFixed(1)} newton metres`}
+                onChange={(event) =>
+                  controller.setLoadTorque(Number(event.target.value))
+                }
+              />
+              <output htmlFor="dyno-load" data-testid="dyno-load-value">
+                {snapshot.loadTorqueNm.toFixed(1)} N m
+              </output>
+            </label>
 
-          <button
-            type="button"
-            className="hold-throttle"
-            aria-label="Hold accelerator"
-            onPointerDown={holdPointerThrottle}
-            onPointerUp={(event) => releasePointerThrottle(event.pointerId)}
-            onPointerCancel={(event) => releasePointerThrottle(event.pointerId)}
-            onLostPointerCapture={(event) =>
-              releasePointerThrottle(event.pointerId)
-            }
+            <label className="mute-control" htmlFor="muted">
+              <input
+                id="muted"
+                type="checkbox"
+                checked={snapshot.muted}
+                onChange={(event) => controller.setMuted(event.target.checked)}
+              />
+              Mute audio
+            </label>
+          </div>
+
+          <section
+            className="config-editor"
+            aria-labelledby="config-editor-title"
           >
-            Hold accelerator (Space)
-          </button>
+            <header className="config-editor-header">
+              <div>
+                <p className="eyebrow">Configuration</p>
+                <h2 id="config-editor-title">Engine configuration</h2>
+              </div>
+              <p className="config-state">
+                Active:{" "}
+                <output data-testid="active-config">
+                  {snapshot.activeConfig.id}
+                </output>
+                {snapshot.pendingConfig ? (
+                  <>
+                    {" · "}Pending:{" "}
+                    <output data-testid="pending-config">
+                      {snapshot.pendingConfig.id}
+                    </output>
+                  </>
+                ) : (
+                  <>
+                    {" · "}
+                    <output data-testid="pending-config">
+                      No pending configuration
+                    </output>
+                  </>
+                )}
+              </p>
+            </header>
 
-          <label className="range-control" htmlFor="dyno-load">
-            <span>Dyno load</span>
-            <input
-              id="dyno-load"
-              type="range"
-              min="0"
-              max={MAX_LOAD_TORQUE_NM}
-              step="0.1"
-              value={snapshot.loadTorqueNm}
-              aria-valuetext={`${snapshot.loadTorqueNm.toFixed(1)} newton metres`}
-              onChange={(event) =>
-                controller.setLoadTorque(Number(event.target.value))
-              }
-            />
-            <output htmlFor="dyno-load" data-testid="dyno-load-value">
-              {snapshot.loadTorqueNm.toFixed(1)} N m
-            </output>
-          </label>
+            <label className="select-control" htmlFor="engine-preset">
+              <span>Engine preset</span>
+              <select
+                id="engine-preset"
+                value={selectedPresetId}
+                onChange={(event) => selectPreset(event.target.value)}
+                disabled={!canStageConfig}
+              >
+                {availablePresets.map((preset) => (
+                  <option key={preset.config.id} value={preset.config.id}>
+                    {preset.metadata.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="mute-control" htmlFor="muted">
-            <input
-              id="muted"
-              type="checkbox"
-              checked={snapshot.muted}
-              onChange={(event) => controller.setMuted(event.target.checked)}
-            />
-            Mute audio
-          </label>
-        </div>
+            {validationIssues.length > 0 || drivetrainIssues.length > 0 ? (
+              <p className="validation-summary" role="alert">
+                {validationIssues.length > 0 ? (
+                  <>
+                    Configuration has {validationIssues.length} invalid phase
+                    {validationIssues.length === 1 ? "" : "s"}. Review the
+                    highlighted fields.{" "}
+                  </>
+                ) : null}
+                {drivetrainIssues.length > 0 ? (
+                  <>
+                    Drivetrain configuration:{" "}
+                    {drivetrainIssues
+                      .map((issue) => `${issue.path}: ${issue.message}`)
+                      .join("; ")}
+                    .{" "}
+                  </>
+                ) : null}
+                Open Configuration details to review the errors.
+              </p>
+            ) : null}
+          </section>
+          <details className="configuration-details">
+            <summary>Configuration details</summary>
+            <div className="configuration-details-content">
+              <p className="cycle-description" id="drivetrain-keyboard-help">
+                Keyboard: ↑ / ↓ shifts through 1, Neutral, 2 and higher gears.
+                Hold C for half clutch; hold Shift+C to disengage fully. Release
+                C to restore the slider setting.
+              </p>
 
-        <p className="cycle-description" id="drivetrain-keyboard-help">
-          Keyboard: ↑ / ↓ shifts through 1, Neutral, 2 and higher gears. Hold C
-          for half clutch; hold Shift+C to disengage fully. Release C to restore
-          the slider setting.
-        </p>
-
-        <section
-          className="drivetrain-config-editor"
-          aria-labelledby="drivetrain-config-title"
-        >
-          <header className="config-editor-header">
-            <div>
-              <p className="eyebrow">Vehicle setup</p>
-              <h2 id="drivetrain-config-title">Drivetrain configuration</h2>
-            </div>
-          </header>
-          {drivetrainIssues.length > 0 ? (
-            <ul className="validation-summary" role="alert">
-              {drivetrainIssues.map((issue, index) => (
-                <li key={`${issue.path}-${index}`}>
-                  {issue.path}: {issue.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          <label className="phase-control" htmlFor="vehicle-mass">
-            <span>Vehicle mass (kg)</span>
-            <input
-              id="vehicle-mass"
-              type="number"
-              min="1"
-              max="100000"
-              step="1"
-              value={vehicleMassKg}
-              disabled={!canStageDrivetrainConfig}
-              aria-invalid={
-                drivetrainIssues.some((issue) =>
-                  issue.path.includes("vehicleMassKg"),
-                ) || undefined
-              }
-              onChange={(event) => {
-                setVehicleMassKg(event.target.value);
-                setDrivetrainIssues([]);
-              }}
-            />
-          </label>
-          <fieldset disabled={!canStageDrivetrainConfig}>
-            <legend>Forward gear ratios</legend>
-            <div className="drivetrain-ratios">
-              {gearRatios.map((ratio, index) => (
-                <label
-                  className="phase-control"
-                  htmlFor={`gear-ratio-${index + 1}`}
-                  key={index}
-                >
-                  <span>Gear {index + 1} ratio</span>
+              <section
+                className="drivetrain-config-editor"
+                aria-labelledby="drivetrain-config-title"
+              >
+                <header className="config-editor-header">
+                  <div>
+                    <p className="eyebrow">Vehicle setup</p>
+                    <h2 id="drivetrain-config-title">
+                      Drivetrain configuration
+                    </h2>
+                  </div>
+                </header>
+                {drivetrainIssues.length > 0 ? (
+                  <ul className="validation-summary">
+                    {drivetrainIssues.map((issue, index) => (
+                      <li key={`${issue.path}-${index}`}>
+                        {issue.path}: {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                <label className="phase-control" htmlFor="vehicle-mass">
+                  <span>Vehicle mass (kg)</span>
                   <input
-                    id={`gear-ratio-${index + 1}`}
+                    id="vehicle-mass"
                     type="number"
-                    min="0.1"
-                    max="100"
-                    step="0.01"
-                    value={ratio}
+                    min="1"
+                    max="100000"
+                    step="1"
+                    value={vehicleMassKg}
+                    disabled={!canStageDrivetrainConfig}
                     aria-invalid={
                       drivetrainIssues.some((issue) =>
-                        issue.path.includes(`gearRatios[${index + 1}]`),
+                        issue.path.includes("vehicleMassKg"),
                       ) || undefined
                     }
                     onChange={(event) => {
-                      setGearRatios((current) =>
-                        current.map((item, itemIndex) =>
-                          itemIndex === index ? event.target.value : item,
-                        ),
-                      );
+                      setVehicleMassKg(event.target.value);
                       setDrivetrainIssues([]);
                     }}
                   />
                 </label>
-              ))}
-            </div>
-          </fieldset>
-          <button
-            type="button"
-            onClick={stageDrivetrainConfig}
-            disabled={!canStageDrivetrainConfig}
-          >
-            Apply drivetrain settings
-          </button>
-        </section>
+                <fieldset disabled={!canStageDrivetrainConfig}>
+                  <legend>Forward gear ratios</legend>
+                  <div className="drivetrain-ratios">
+                    {gearRatios.map((ratio, index) => (
+                      <label
+                        className="phase-control"
+                        htmlFor={`gear-ratio-${index + 1}`}
+                        key={index}
+                      >
+                        <span>Gear {index + 1} ratio</span>
+                        <input
+                          id={`gear-ratio-${index + 1}`}
+                          type="number"
+                          min="0.1"
+                          max="100"
+                          step="0.01"
+                          value={ratio}
+                          aria-invalid={
+                            drivetrainIssues.some((issue) =>
+                              issue.path.includes(`gearRatios[${index + 1}]`),
+                            ) || undefined
+                          }
+                          onChange={(event) => {
+                            setGearRatios((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index ? event.target.value : item,
+                              ),
+                            );
+                            setDrivetrainIssues([]);
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <button
+                  type="button"
+                  onClick={stageDrivetrainConfig}
+                  disabled={!canStageDrivetrainConfig}
+                >
+                  Apply drivetrain settings
+                </button>
+              </section>
 
-        <section
-          className="config-editor"
-          aria-labelledby="config-editor-title"
-        >
-          <header className="config-editor-header">
+              <section
+                className="engine-phase-editor"
+                aria-label="Engine phase settings"
+              >
+                <p
+                  className="cycle-description"
+                  data-testid="preset-limitations"
+                >
+                  Available presets: 1–4, 6, and 8 cylinders. Configuration
+                  limit: 8 cylinders. Presets use synthetic model values, not
+                  measurements of real engines or vehicles.
+                </p>
+
+                <fieldset disabled={!canStageConfig}>
+                  <legend>燃焼位相（{draftConfig.cycleDegrees}°周期）</legend>
+                  <p className="cycle-description" data-testid="draft-cycle">
+                    {strokeCycleLabel(draftConfig.cycleDegrees)}
+                  </p>
+                  {validationIssues.length > 0 ? (
+                    <p className="validation-summary">
+                      Configuration has {validationIssues.length} invalid phase
+                      {validationIssues.length === 1 ? "" : "s"}. Review the
+                      highlighted fields.
+                    </p>
+                  ) : null}
+                  <div className="phase-inputs">
+                    {draftConfig.cylinders.map((cylinder, index) => {
+                      const issue = phaseIssue(validationIssues, index);
+                      const inputId = `cylinder-phase-${index + 1}`;
+                      return (
+                        <label
+                          key={cylinder.id}
+                          className="phase-control"
+                          htmlFor={inputId}
+                        >
+                          <span>Cylinder {index + 1} phase (degrees)</span>
+                          <input
+                            id={inputId}
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            max={String(
+                              Math.max(0, draftConfig.cycleDegrees - 0.001),
+                            )}
+                            step="any"
+                            value={phases[index] ?? ""}
+                            onChange={(event) =>
+                              updatePhase(index, event.target.value)
+                            }
+                            aria-invalid={issue ? true : undefined}
+                            aria-describedby={
+                              issue ? `${inputId}-error` : undefined
+                            }
+                            ref={
+                              index === firstInvalidPhaseIndex
+                                ? firstInvalidPhaseRef
+                                : undefined
+                            }
+                          />
+                          {issue ? (
+                            <span
+                              className="field-error"
+                              id={`${inputId}-error`}
+                            >
+                              {issue}
+                            </span>
+                          ) : null}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
+                <button
+                  type="button"
+                  onClick={stageConfig}
+                  disabled={!canStageConfig}
+                >
+                  Apply for next start
+                </button>
+              </section>
+            </div>
+          </details>
+        </div>
+        <div className="dashboard-visuals">
+          <EngineVisualizations
+            controller={controller}
+            running={snapshot.status === "running"}
+            activeConfig={snapshot.activeConfig}
+          />
+
+          <p className="status" role="status" aria-atomic="true">
+            Status:{" "}
+            <output data-testid="audio-status">{snapshot.status}</output>
+          </p>
+          <dl className="telemetry" aria-label="Engine telemetry">
             <div>
-              <p className="eyebrow">Configuration</p>
-              <h2 id="config-editor-title">Engine configuration</h2>
+              <dt>RPM</dt>
+              <dd data-testid="engine-rpm">
+                {Math.round(snapshot.telemetry.rpm)}
+              </dd>
             </div>
-            <p className="config-state">
-              Active:{" "}
-              <output data-testid="active-config">
-                {snapshot.activeConfig.id}
-              </output>
-              {snapshot.pendingConfig ? (
-                <>
-                  {" · "}Pending:{" "}
-                  <output data-testid="pending-config">
-                    {snapshot.pendingConfig.id}
-                  </output>
-                </>
-              ) : (
-                <>
-                  {" · "}
-                  <output data-testid="pending-config">
-                    No pending configuration
-                  </output>
-                </>
-              )}
-            </p>
-          </header>
-
-          <label className="select-control" htmlFor="engine-preset">
-            <span>Engine preset</span>
-            <select
-              id="engine-preset"
-              value={selectedPresetId}
-              onChange={(event) => selectPreset(event.target.value)}
-              disabled={!canStageConfig}
-            >
-              {availablePresets.map((preset) => (
-                <option key={preset.config.id} value={preset.config.id}>
-                  {preset.metadata.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <p className="cycle-description" data-testid="preset-limitations">
-            Available presets: 1–4, 6, and 8 cylinders. Configuration limit: 8
-            cylinders. Presets use synthetic model values, not measurements of
-            real engines or vehicles.
-          </p>
-
-          <fieldset disabled={!canStageConfig}>
-            <legend>燃焼位相（{draftConfig.cycleDegrees}°周期）</legend>
-            <p className="cycle-description" data-testid="draft-cycle">
-              {strokeCycleLabel(draftConfig.cycleDegrees)}
-            </p>
-            {validationIssues.length > 0 ? (
-              <p className="validation-summary" role="alert">
-                Configuration has {validationIssues.length} invalid phase
-                {validationIssues.length === 1 ? "" : "s"}. Review the
-                highlighted fields.
-              </p>
-            ) : null}
-            <div className="phase-inputs">
-              {draftConfig.cylinders.map((cylinder, index) => {
-                const issue = phaseIssue(validationIssues, index);
-                const inputId = `cylinder-phase-${index + 1}`;
-                return (
-                  <label
-                    key={cylinder.id}
-                    className="phase-control"
-                    htmlFor={inputId}
-                  >
-                    <span>Cylinder {index + 1} phase (degrees)</span>
-                    <input
-                      id={inputId}
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      max={String(
-                        Math.max(0, draftConfig.cycleDegrees - 0.001),
-                      )}
-                      step="any"
-                      value={phases[index] ?? ""}
-                      onChange={(event) =>
-                        updatePhase(index, event.target.value)
-                      }
-                      aria-invalid={issue ? true : undefined}
-                      aria-describedby={issue ? `${inputId}-error` : undefined}
-                      ref={
-                        index === firstInvalidPhaseIndex
-                          ? firstInvalidPhaseRef
-                          : undefined
-                      }
-                    />
-                    {issue ? (
-                      <span className="field-error" id={`${inputId}-error`}>
-                        {issue}
-                      </span>
-                    ) : null}
-                  </label>
-                );
-              })}
+            <div>
+              <dt>Vehicle speed</dt>
+              <dd data-testid="vehicle-speed" aria-label="Vehicle speed">
+                {displayVehicleSpeed} km/h
+              </dd>
             </div>
-          </fieldset>
-
-          <button
-            type="button"
-            onClick={stageConfig}
-            disabled={!canStageConfig}
-          >
-            Apply for next start
-          </button>
-        </section>
-
-        <EngineVisualizations
-          controller={controller}
-          running={snapshot.status === "running"}
-          activeConfig={snapshot.activeConfig}
-        />
-
-        <p className="status" role="status" aria-atomic="true">
-          Status: <output data-testid="audio-status">{snapshot.status}</output>
-        </p>
-        <dl className="telemetry" aria-label="Engine telemetry">
-          <div>
-            <dt>RPM</dt>
-            <dd data-testid="engine-rpm">
-              {Math.round(snapshot.telemetry.rpm)}
-            </dd>
-          </div>
-          <div>
-            <dt>Vehicle speed</dt>
-            <dd data-testid="vehicle-speed" aria-label="Vehicle speed">
-              {displayVehicleSpeed} km/h
-            </dd>
-          </div>
-          <div>
-            <dt>Effective throttle</dt>
-            <dd data-testid="effective-throttle">
-              {Math.round(snapshot.telemetry.effectiveThrottle * 100)}%
-            </dd>
-          </div>
-          <div>
-            <dt>Limiter</dt>
-            <dd data-testid="limiter-state">
-              {snapshot.telemetry.limiterActive ? "active" : "inactive"}
-            </dd>
-          </div>
-        </dl>
-        {snapshot.error ? (
-          <p className="error" role="alert">
-            Audio error ({snapshot.error.code}): {snapshot.error.message}
-          </p>
-        ) : null}
+            <div>
+              <dt>Effective throttle</dt>
+              <dd data-testid="effective-throttle">
+                {Math.round(snapshot.telemetry.effectiveThrottle * 100)}%
+              </dd>
+            </div>
+            <div>
+              <dt>Limiter</dt>
+              <dd data-testid="limiter-state">
+                {snapshot.telemetry.limiterActive ? "active" : "inactive"}
+              </dd>
+            </div>
+          </dl>
+          {snapshot.error ? (
+            <p className="error" role="alert">
+              Audio error ({snapshot.error.code}): {snapshot.error.message}
+            </p>
+          ) : null}
+        </div>
       </section>
     </main>
   );
