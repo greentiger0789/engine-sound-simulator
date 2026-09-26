@@ -14,6 +14,8 @@
 !/.codex/agents/
 /.codex/agents/*
 !/.codex/agents/ticket-worker.toml
+!/.codex/agents/ticket-worker-luna.toml
+!/.codex/agents/ticket-worker-terra.toml
 !/.codex/agents/ticket-reviewer.toml
 
 # Dependencies and build artifacts
