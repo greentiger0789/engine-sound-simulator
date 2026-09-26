@@ -92,7 +92,15 @@ export function App() {
   const holdingPointerThrottle = useRef(false);
   const holdingPointerId = useRef<number | null>(null);
   const holdingKeyboardThrottle = useRef(false);
+  const clutchBeforeKeyboard = useRef<number | null>(null);
   const firstInvalidPhaseRef = useRef<HTMLInputElement>(null);
+
+  const releaseKeyboardClutch = useCallback(() => {
+    const priorClutch = clutchBeforeKeyboard.current;
+    if (priorClutch === null) return;
+    clutchBeforeKeyboard.current = null;
+    controller.setClutch(priorClutch);
+  }, [controller]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -112,13 +120,14 @@ export function App() {
 
   useEffect(() => {
     const handleVisibilityChange = () => {
+      if (document.hidden) releaseKeyboardClutch();
       void controller.handleVisibilityChange(document.hidden);
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [controller]);
+  }, [controller, releaseKeyboardClutch]);
 
   const start = useCallback(() => {
     void controller.start();
@@ -173,25 +182,85 @@ export function App() {
       return (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
         target.isContentEditable
       );
     };
     const keyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || isEditingText(event.target)) return;
-      event.preventDefault();
-      holdingKeyboardThrottle.current = true;
-      syncHoldThrottle();
+      if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
+        if (clutchBeforeKeyboard.current !== null) controller.setClutch(0);
+        return;
+      }
+      if (event.code === "KeyC") {
+        if (
+          isEditingText(event.target) ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey
+        )
+          return;
+        event.preventDefault();
+        if (event.repeat && clutchBeforeKeyboard.current !== null) return;
+        clutchBeforeKeyboard.current ??= controller.getSnapshot().clutch;
+        controller.setClutch(event.shiftKey ? 0 : 0.5);
+        return;
+      }
+      if (event.code === "ArrowUp" || event.code === "ArrowDown") {
+        if (
+          isEditingText(event.target) ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey
+        )
+          return;
+        event.preventDefault();
+        if (event.repeat) return;
+        const { drivetrainGear, drivetrainConfig } = controller.getSnapshot();
+        const lastGear = drivetrainConfig.gearRatios.length - 1;
+        const nextGear =
+          event.code === "ArrowUp"
+            ? drivetrainGear === 1
+              ? 0
+              : drivetrainGear === 0
+                ? Math.min(2, lastGear)
+                : Math.min(drivetrainGear + 1, lastGear)
+            : drivetrainGear === 2
+              ? 0
+              : drivetrainGear === 0
+                ? 1
+                : Math.max(1, drivetrainGear - 1);
+        controller.setDrivetrainGear(nextGear);
+        return;
+      }
+      if (event.code === "Space" && !isEditingText(event.target)) {
+        event.preventDefault();
+        holdingKeyboardThrottle.current = true;
+        syncHoldThrottle();
+      }
     };
     const keyUp = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || !holdingKeyboardThrottle.current) return;
-      event.preventDefault();
-      releaseKeyboardThrottle();
+      if (event.code === "KeyC" && clutchBeforeKeyboard.current !== null) {
+        event.preventDefault();
+        releaseKeyboardClutch();
+      } else if (
+        (event.code === "ShiftLeft" || event.code === "ShiftRight") &&
+        clutchBeforeKeyboard.current !== null &&
+        !event.shiftKey
+      ) {
+        controller.setClutch(0.5);
+      } else if (event.code === "Space" && holdingKeyboardThrottle.current) {
+        event.preventDefault();
+        releaseKeyboardThrottle();
+      }
     };
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
     const pointerUp = (event: PointerEvent) =>
       releasePointerThrottle(event.pointerId);
-    const blur = () => releaseAllHoldThrottle();
+    const blur = () => {
+      releaseAllHoldThrottle();
+      releaseKeyboardClutch();
+    };
     window.addEventListener("pointerup", pointerUp);
     window.addEventListener("pointercancel", pointerUp);
     window.addEventListener("blur", blur);
@@ -202,10 +271,13 @@ export function App() {
       window.removeEventListener("pointercancel", pointerUp);
       window.removeEventListener("blur", blur);
       releaseAllHoldThrottle();
+      releaseKeyboardClutch();
     };
   }, [
+    controller,
     releaseAllHoldThrottle,
     releaseKeyboardThrottle,
+    releaseKeyboardClutch,
     releasePointerThrottle,
     syncHoldThrottle,
   ]);
@@ -334,18 +406,21 @@ export function App() {
             <span>Gear</span>
             <select
               id="drivetrain-gear"
+              aria-describedby="drivetrain-keyboard-help"
               value={snapshot.drivetrainGear}
               onChange={(event) =>
                 controller.setDrivetrainGear(Number(event.target.value))
               }
             >
-              {snapshot.drivetrainConfig.gearRatios.map((_, index) => (
-                <option key={index} value={index}>
-                  {index === 0
-                    ? "Neutral"
-                    : `${index}${gearOrdinal(index)} gear`}
-                </option>
-              ))}
+              {snapshot.drivetrainConfig.gearRatios
+                .map((_, index) => (index === 0 ? 1 : index === 1 ? 0 : index))
+                .map((index) => (
+                  <option key={index} value={index}>
+                    {index === 0
+                      ? "Neutral"
+                      : `${index}${gearOrdinal(index)} gear`}
+                  </option>
+                ))}
             </select>
           </label>
 
@@ -353,15 +428,22 @@ export function App() {
             <span>Clutch engagement</span>
             <input
               id="clutch"
+              aria-describedby="drivetrain-keyboard-help"
               type="range"
               min="0"
               max="1"
               step="0.01"
               value={snapshot.clutch}
               aria-valuetext={`${Math.round(snapshot.clutch * 100)} percent engaged`}
-              onChange={(event) =>
-                controller.setClutch(Number(event.target.value))
-              }
+              onChange={(event) => {
+                const coupling = Number(event.target.value);
+                if (clutchBeforeKeyboard.current !== null) {
+                  clutchBeforeKeyboard.current = coupling;
+                  controller.setClutch(controller.getSnapshot().clutch);
+                } else {
+                  controller.setClutch(coupling);
+                }
+              }}
             />
             <output htmlFor="clutch" data-testid="clutch-value">
               {Math.round(snapshot.clutch * 100)}%
@@ -467,6 +549,12 @@ export function App() {
             Mute audio
           </label>
         </div>
+
+        <p className="cycle-description" id="drivetrain-keyboard-help">
+          Keyboard: ↑ / ↓ shifts through 1, Neutral, 2 and higher gears. Hold C
+          for half clutch; hold Shift+C to disengage fully. Release C to restore
+          the slider setting.
+        </p>
 
         <section
           className="drivetrain-config-editor"

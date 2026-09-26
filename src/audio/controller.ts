@@ -171,7 +171,7 @@ export class AudioController {
     loadTorqueNm: 0,
     drivetrainConfig: DEFAULT_DRIVETRAIN_CONFIG,
     drivetrainGear: 0,
-    clutch: 0,
+    clutch: 1,
     telemetry: INITIAL_TELEMETRY,
     activeConfig: this.activeConfig,
     pendingConfig: null,

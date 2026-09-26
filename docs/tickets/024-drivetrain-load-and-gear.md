@@ -22,6 +22,7 @@ Engine coreと分離したDrivetrain modelとして車両負荷、クラッチ�
 - `src/engine/drivetrain.ts` は EngineConfig を変更せず別config/stateとして結合する。neutralでは従来の簡易load挙動を保つ。
 - clutchは連続coupling、gearは有効ratio、vehicle resistanceは速度依存として表し、単位と境界をvalidatorで固定する。
 - UIは現在gear、vehicle speed、clutchを表示し、不正ratio/負質量をrejectする。
+- キーボードでは↑/↓で `1 → N → 2` の順に変速し、`C` を押している間は半クラ、`Shift+C` を押している間はクラッチを切る。入力欄の標準キー操作を優先し、キーを離すか画面のフォーカスを失ったら元のクラッチ設定へ戻す。
 
 ## 受け入れ基準
 
