@@ -6,6 +6,11 @@ import { BlockBudgetMeter } from "../dsp/block-budget-meter";
 import { BankSignalRouter } from "../dsp/bank-signal-router";
 import { parseEngineConfig, type EngineConfig } from "../../engine/config";
 import { RotationalDynamics } from "../../engine/dynamics";
+import {
+  DEFAULT_DRIVETRAIN_CONFIG,
+  Drivetrain,
+  parseDrivetrainConfig,
+} from "../../engine/drivetrain";
 import { FiringEventGenerator } from "../../engine/events";
 import type {
   ControllerToProcessorMessage,
@@ -15,6 +20,7 @@ import type {
 } from "./contracts";
 import {
   ENGINE_AUDIO_LOAD_TORQUE_PARAM,
+  ENGINE_AUDIO_CLUTCH_PARAM,
   ENGINE_AUDIO_PROCESSOR_NAME,
   MAX_LOAD_TORQUE_NM,
 } from "./contracts";
@@ -29,6 +35,7 @@ const TONE_MAKEUP_GAIN = 1.2;
 interface EngineRuntime {
   readonly config: EngineConfig;
   readonly dynamics: RotationalDynamics;
+  readonly drivetrain: Drivetrain;
   readonly events: FiringEventGenerator;
   readonly bankRouter: BankSignalRouter;
   readonly bankDsps: readonly SingleCylinderPulseDsp[];
@@ -61,6 +68,13 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
         defaultValue: 0,
         minValue: 0,
         maxValue: MAX_LOAD_TORQUE_NM,
+        automationRate: "a-rate" as const,
+      },
+      {
+        name: ENGINE_AUDIO_CLUTCH_PARAM,
+        defaultValue: 0,
+        minValue: 0,
+        maxValue: 1,
         automationRate: "a-rate" as const,
       },
     ];
@@ -110,6 +124,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       const throttle = parameters.throttle;
       const gain = parameters.gain;
       const loadTorqueNm = parameters[ENGINE_AUDIO_LOAD_TORQUE_PARAM];
+      const clutch = parameters[ENGINE_AUDIO_CLUTCH_PARAM];
       const blockStartFrame = this.framesRendered;
       for (let frame = 0; frame < frameCount; frame += 1) {
         runtime.dynamics.setThrottle(
@@ -122,7 +137,16 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
           0,
           MAX_LOAD_TORQUE_NM,
         );
-        runtime.dynamics.setLoadTorque(frameLoadTorque);
+        runtime.drivetrain.setClutch(
+          this.paramAt(ENGINE_AUDIO_CLUTCH_PARAM, clutch, frame, 0),
+        );
+        runtime.drivetrain.advanceRealtimeFrame(
+          runtime.dynamics.getAngularVelocityRadPerSec(),
+          sampleRate,
+        );
+        runtime.dynamics.setLoadTorque(
+          frameLoadTorque + runtime.drivetrain.getEngineLoadTorqueNm(),
+        );
         this.normalizedLoad[frame] = frameLoadTorque / MAX_LOAD_TORQUE_NM;
         runtime.dynamics.advanceRealtimeFrame(sampleRate);
         const rpm = runtime.dynamics.getRpm();
@@ -250,6 +274,22 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
             .join("; "),
         );
       const snapshot = parsed.value;
+      const drivetrainConfig = parseDrivetrainConfig(
+        config.drivetrain === undefined
+          ? DEFAULT_DRIVETRAIN_CONFIG
+          : config.drivetrain,
+      );
+      if (!drivetrainConfig.ok) {
+        throw new RangeError(
+          drivetrainConfig.issues
+            .map((issue) => `${issue.path} ${issue.message}`)
+            .join("; "),
+        );
+      }
+      const drivetrain = new Drivetrain(drivetrainConfig.value);
+      drivetrain.setGear(
+        config.drivetrainGear === undefined ? 0 : config.drivetrainGear,
+      );
       const bankRouter = new BankSignalRouter(
         snapshot.cylinders,
         MAX_BLOCK_FRAMES,
@@ -265,6 +305,7 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       this.runtime = {
         config: snapshot,
         dynamics: new RotationalDynamics(snapshot),
+        drivetrain,
         events: new FiringEventGenerator({
           cycleDegrees: snapshot.cycleDegrees,
           cylinders: snapshot.cylinders,
@@ -380,6 +421,9 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
       rpm,
       effectiveThrottle,
       limiterActive: this.limiterActive,
+      vehicleSpeedMps: this.runtime?.drivetrain.getVehicleSpeedMps() ?? 0,
+      drivetrainGear: this.runtime?.drivetrain.getState().gear ?? 0,
+      clutch: this.runtime?.drivetrain.getState().clutchCoupling ?? 0,
     } satisfies ProcessorToControllerMessage);
   }
 
@@ -415,7 +459,13 @@ export class EngineAudioProcessor extends AudioWorkletProcessor {
   private handleControllerMessage = (
     event: MessageEvent<ControllerToProcessorMessage>,
   ): void => {
-    if (event.data.type === "replace-config")
+    if (event.data.type === "set-drivetrain-gear") {
+      try {
+        this.runtime?.drivetrain.setGear(event.data.gear);
+      } catch (error: unknown) {
+        this.fatal(error instanceof Error ? error.message : "invalid gear");
+      }
+    } else if (event.data.type === "replace-config")
       this.applyConfig(event.data.requestId, event.data.config);
   };
 }

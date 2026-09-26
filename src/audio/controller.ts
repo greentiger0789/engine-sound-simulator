@@ -7,6 +7,7 @@ import {
 import { resolveEngineAudioWorkletModuleUrl } from "./worklet-module-url";
 import {
   ENGINE_AUDIO_LOAD_TORQUE_PARAM,
+  ENGINE_AUDIO_CLUTCH_PARAM,
   ENGINE_AUDIO_PROCESSOR_NAME,
   MAX_LOAD_TORQUE_NM,
   type EngineAudioConfig,
@@ -18,6 +19,12 @@ import {
   type EngineConfigValidationIssue,
 } from "../engine/config";
 import { singleCylinderEngineConfig } from "../presets/single-cylinder";
+import {
+  DEFAULT_DRIVETRAIN_CONFIG,
+  parseDrivetrainConfig,
+  type DrivetrainConfig,
+  type DrivetrainConfigIssue,
+} from "../engine/drivetrain";
 
 export type AudioControllerStatus = AudioLifecycleStatus;
 
@@ -45,6 +52,9 @@ export interface AudioControllerSnapshot {
   readonly throttle: number;
   /** Dynamometer resisting torque in N m, bounded to [0, 40]. */
   readonly loadTorqueNm: number;
+  readonly drivetrainConfig: DrivetrainConfig;
+  readonly drivetrainGear: number;
+  readonly clutch: number;
   readonly telemetry: AudioTelemetry;
   /** Last configuration confirmed by the processor. */
   readonly activeConfig: EngineConfig;
@@ -65,7 +75,13 @@ export interface AudioTelemetry {
   readonly rpm: number;
   readonly effectiveThrottle: number;
   readonly limiterActive: boolean;
+  readonly vehicleSpeedMps: number;
 }
+
+export type DrivetrainStageResult =
+  | { readonly ok: true; readonly value: DrivetrainConfig }
+  | { readonly ok: false; readonly issues: readonly DrivetrainConfigIssue[] }
+  | { readonly ok: false; readonly reason: "audio-active" };
 
 /**
  * Read-only audio data source for rendering output visualizations. The
@@ -99,6 +115,7 @@ const INITIAL_TELEMETRY: AudioTelemetry = {
   rpm: 0,
   effectiveThrottle: 0,
   limiterActive: false,
+  vehicleSpeedMps: 0,
 };
 
 function validatedSingleCylinderConfig(): EngineConfig {
@@ -152,6 +169,9 @@ export class AudioController {
     error: null,
     throttle: 0,
     loadTorqueNm: 0,
+    drivetrainConfig: DEFAULT_DRIVETRAIN_CONFIG,
+    drivetrainGear: 0,
+    clutch: 0,
     telemetry: INITIAL_TELEMETRY,
     activeConfig: this.activeConfig,
     pendingConfig: null,
@@ -291,6 +311,41 @@ export class AudioController {
     }
   }
 
+  setDrivetrainGear(gear: number): void {
+    if (
+      !Number.isInteger(gear) ||
+      gear < 0 ||
+      gear >= this.snapshot.drivetrainConfig.gearRatios.length
+    )
+      return;
+    this.setSnapshot({ drivetrainGear: gear });
+    this.node?.port.postMessage({ type: "set-drivetrain-gear", gear });
+  }
+
+  setClutch(coupling: number): void {
+    if (!Number.isFinite(coupling)) return;
+    const normalized = Math.min(1, Math.max(0, coupling));
+    this.setSnapshot({ clutch: normalized });
+    const parameter = this.node?.parameters.get(ENGINE_AUDIO_CLUTCH_PARAM);
+    if (parameter !== undefined && this.context !== null) {
+      parameter.setValueAtTime(normalized, this.context.currentTime);
+    }
+  }
+
+  stageDrivetrainConfig(input: unknown): DrivetrainStageResult {
+    if (this.snapshot.status !== "idle") {
+      return { ok: false, reason: "audio-active" };
+    }
+    const parsed = parseDrivetrainConfig(input);
+    if (!parsed.ok) return { ok: false, issues: parsed.issues };
+    const gear = Math.min(
+      this.snapshot.drivetrainGear,
+      parsed.value.gearRatios.length - 1,
+    );
+    this.setSnapshot({ drivetrainConfig: parsed.value, drivetrainGear: gear });
+    return { ok: true, value: parsed.value };
+  }
+
   /**
    * Validates and stages an editor snapshot without touching browser audio.
    * The editor accepts any cycle supported by the shared configuration
@@ -406,6 +461,8 @@ export class AudioController {
       const config: EngineAudioConfig = {
         version: 1,
         snapshot: configToApply,
+        drivetrain: this.snapshot.drivetrainConfig,
+        drivetrainGear: this.snapshot.drivetrainGear,
       };
       const node = new AudioWorkletNode(context, ENGINE_AUDIO_PROCESSOR_NAME, {
         processorOptions: { requestId, config },
@@ -458,6 +515,9 @@ export class AudioController {
       node.parameters
         .get(ENGINE_AUDIO_LOAD_TORQUE_PARAM)
         ?.setValueAtTime(this.snapshot.loadTorqueNm, context.currentTime);
+      node.parameters
+        .get(ENGINE_AUDIO_CLUTCH_PARAM)
+        ?.setValueAtTime(this.snapshot.clutch, context.currentTime);
       fadeGain.gain.setValueAtTime(0, context.currentTime);
       this.applyVolume();
       node.connect(fadeGain).connect(volumeGain).connect(context.destination);
@@ -613,13 +673,17 @@ export class AudioController {
     } else if (message.type === "telemetry") {
       if (
         Number.isFinite(message.rpm) &&
-        Number.isFinite(message.effectiveThrottle)
+        Number.isFinite(message.effectiveThrottle) &&
+        (message.vehicleSpeedMps === undefined ||
+          (Number.isFinite(message.vehicleSpeedMps) &&
+            message.vehicleSpeedMps >= 0))
       ) {
         this.setSnapshot({
           telemetry: {
             rpm: message.rpm,
             effectiveThrottle: message.effectiveThrottle,
             limiterActive: message.limiterActive,
+            vehicleSpeedMps: message.vehicleSpeedMps ?? 0,
           },
         });
       } else {

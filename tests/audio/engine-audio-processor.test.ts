@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EngineAudioProcessorOptions } from "../../src/audio/worklets/contracts";
 import { ENGINE_AUDIO_PROCESSOR_NAME } from "../../src/audio/worklets/contracts";
 import { singleCylinderPreset } from "../../src/presets/single-cylinder";
+import { DEFAULT_DRIVETRAIN_CONFIG } from "../../src/engine/drivetrain";
 import {
   evenlySpacedTriplePreset,
   evenlySpacedFourPreset,
@@ -90,6 +91,85 @@ describe("EngineAudioProcessor", () => {
       }
     },
   );
+
+  it("couples an engaged gear to vehicle speed and engine load while neutral retains dyno behavior", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const makeProcessor = (gear: number) =>
+      new registeredProcessor!({
+        processorOptions: {
+          requestId: `gear-${gear}`,
+          config: {
+            version: 1,
+            snapshot: structuredClone(singleCylinderPreset.config),
+            drivetrain: DEFAULT_DRIVETRAIN_CONFIG,
+            drivetrainGear: gear,
+          },
+        } satisfies EngineAudioProcessorOptions,
+      });
+    const neutral = makeProcessor(0);
+    const engaged = makeProcessor(1);
+    for (let block = 0; block < 375; block += 1) {
+      render(neutral, 128, new Float32Array([0.6]));
+      const output = new Float32Array(128);
+      engaged.process([], [[output]], {
+        throttle: new Float32Array([0.6]),
+        gain: new Float32Array([1]),
+        loadTorqueNm: new Float32Array([0]),
+        clutch: new Float32Array([1]),
+      });
+      expect([...output].every(Number.isFinite)).toBe(true);
+    }
+    const lastTelemetry = (processor: ProcessorInstance) =>
+      processor.port.messages
+        .filter(
+          (
+            message,
+          ): message is {
+            type: "telemetry";
+            rpm: number;
+            vehicleSpeedMps: number;
+          } =>
+            typeof message === "object" &&
+            message !== null &&
+            "type" in message &&
+            message.type === "telemetry",
+        )
+        .at(-1)!;
+    expect(lastTelemetry(neutral).vehicleSpeedMps).toBe(0);
+    expect(lastTelemetry(engaged).vehicleSpeedMps).toBeGreaterThan(0);
+    expect(lastTelemetry(engaged).rpm).toBeLessThan(lastTelemetry(neutral).rpm);
+    expect(engaged.port.messages).not.toContainEqual(
+      expect.objectContaining({ type: "fatal-error" }),
+    );
+  });
+
+  it("rejects invalid vehicle settings at the worklet boundary", async () => {
+    vi.stubGlobal("sampleRate", 48_000);
+    await import("../../src/audio/worklets/engine-audio-processor");
+    const processor = new registeredProcessor!({
+      processorOptions: {
+        requestId: "invalid-vehicle",
+        config: {
+          version: 1,
+          snapshot: structuredClone(singleCylinderPreset.config),
+          drivetrain: {
+            ...DEFAULT_DRIVETRAIN_CONFIG,
+            vehicleMassKg: -1,
+          },
+        },
+      },
+    });
+    expect(processor.port.messages).toEqual([
+      expect.objectContaining({
+        type: "config-rejected",
+        requestId: "invalid-vehicle",
+      }),
+    ]);
+    expect(render(processor, 128, new Float32Array([1]))).toEqual(
+      new Float32Array(128),
+    );
+  });
 
   it("stays silent before configuration and rejects bad snapshots without ready", async () => {
     vi.stubGlobal("sampleRate", 48000);
@@ -374,6 +454,12 @@ describe("EngineAudioProcessor", () => {
         name: "loadTorqueNm",
         minValue: 0,
         maxValue: 40,
+        automationRate: "a-rate",
+      }),
+      expect.objectContaining({
+        name: "clutch",
+        minValue: 0,
+        maxValue: 1,
         automationRate: "a-rate",
       }),
     ]);

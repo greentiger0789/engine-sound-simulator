@@ -80,6 +80,15 @@ export function App() {
   const [validationIssues, setValidationIssues] = useState<
     readonly EngineConfigValidationIssue[]
   >([]);
+  const [vehicleMassKg, setVehicleMassKg] = useState(() =>
+    String(snapshot.drivetrainConfig.vehicleMassKg),
+  );
+  const [gearRatios, setGearRatios] = useState(() =>
+    snapshot.drivetrainConfig.gearRatios.slice(1).map(String),
+  );
+  const [drivetrainIssues, setDrivetrainIssues] = useState<
+    readonly { readonly path: string; readonly message: string }[]
+  >([]);
   const holdingPointerThrottle = useRef(false);
   const holdingPointerId = useRef<number | null>(null);
   const holdingKeyboardThrottle = useRef(false);
@@ -242,6 +251,27 @@ export function App() {
     }
   }, [controller, draftConfig, phases]);
 
+  const stageDrivetrainConfig = useCallback(() => {
+    const result = controller.stageDrivetrainConfig({
+      ...snapshot.drivetrainConfig,
+      vehicleMassKg:
+        vehicleMassKg.trim() === "" ? Number.NaN : Number(vehicleMassKg),
+      gearRatios: [
+        0,
+        ...gearRatios.map((ratio) =>
+          ratio.trim() === "" ? Number.NaN : Number(ratio),
+        ),
+      ],
+    });
+    if (result.ok) {
+      setVehicleMassKg(String(result.value.vehicleMassKg));
+      setGearRatios(result.value.gearRatios.slice(1).map(String));
+      setDrivetrainIssues([]);
+    } else if ("issues" in result) {
+      setDrivetrainIssues(result.issues);
+    }
+  }, [controller, gearRatios, snapshot.drivetrainConfig, vehicleMassKg]);
+
   const isStartingOrRunning =
     snapshot.status === "starting" || snapshot.status === "running";
   const canStop =
@@ -252,9 +282,14 @@ export function App() {
   const canStageConfig =
     snapshot.status === "idle" ||
     (snapshot.status === "error" && snapshot.error?.code === "config-rejected");
+  const canStageDrivetrainConfig = snapshot.status === "idle";
   const firstInvalidPhaseIndex = draftConfig.cylinders.findIndex((_, index) =>
     Boolean(phaseIssue(validationIssues, index)),
   );
+  const vehicleSpeedKmh = snapshot.telemetry.vehicleSpeedMps * 3.6;
+  const displayVehicleSpeed = Number.isFinite(vehicleSpeedKmh)
+    ? vehicleSpeedKmh.toFixed(1)
+    : "—";
   return (
     <main className="app-shell">
       <section aria-labelledby="app-title" className="controller-area">
@@ -295,6 +330,44 @@ export function App() {
         ) : null}
 
         <div className="control-stack">
+          <label className="drivetrain-control" htmlFor="drivetrain-gear">
+            <span>Gear</span>
+            <select
+              id="drivetrain-gear"
+              value={snapshot.drivetrainGear}
+              onChange={(event) =>
+                controller.setDrivetrainGear(Number(event.target.value))
+              }
+            >
+              {snapshot.drivetrainConfig.gearRatios.map((_, index) => (
+                <option key={index} value={index}>
+                  {index === 0
+                    ? "Neutral"
+                    : `${index}${gearOrdinal(index)} gear`}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="range-control" htmlFor="clutch">
+            <span>Clutch engagement</span>
+            <input
+              id="clutch"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={snapshot.clutch}
+              aria-valuetext={`${Math.round(snapshot.clutch * 100)} percent engaged`}
+              onChange={(event) =>
+                controller.setClutch(Number(event.target.value))
+              }
+            />
+            <output htmlFor="clutch" data-testid="clutch-value">
+              {Math.round(snapshot.clutch * 100)}%
+            </output>
+          </label>
+
           <label className="range-control" htmlFor="volume">
             <span>Volume</span>
             <input
@@ -394,6 +467,90 @@ export function App() {
             Mute audio
           </label>
         </div>
+
+        <section
+          className="drivetrain-config-editor"
+          aria-labelledby="drivetrain-config-title"
+        >
+          <header className="config-editor-header">
+            <div>
+              <p className="eyebrow">Vehicle setup</p>
+              <h2 id="drivetrain-config-title">Drivetrain configuration</h2>
+            </div>
+          </header>
+          {drivetrainIssues.length > 0 ? (
+            <ul className="validation-summary" role="alert">
+              {drivetrainIssues.map((issue, index) => (
+                <li key={`${issue.path}-${index}`}>
+                  {issue.path}: {issue.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <label className="phase-control" htmlFor="vehicle-mass">
+            <span>Vehicle mass (kg)</span>
+            <input
+              id="vehicle-mass"
+              type="number"
+              min="1"
+              max="100000"
+              step="1"
+              value={vehicleMassKg}
+              disabled={!canStageDrivetrainConfig}
+              aria-invalid={
+                drivetrainIssues.some((issue) =>
+                  issue.path.includes("vehicleMassKg"),
+                ) || undefined
+              }
+              onChange={(event) => {
+                setVehicleMassKg(event.target.value);
+                setDrivetrainIssues([]);
+              }}
+            />
+          </label>
+          <fieldset disabled={!canStageDrivetrainConfig}>
+            <legend>Forward gear ratios</legend>
+            <div className="drivetrain-ratios">
+              {gearRatios.map((ratio, index) => (
+                <label
+                  className="phase-control"
+                  htmlFor={`gear-ratio-${index + 1}`}
+                  key={index}
+                >
+                  <span>Gear {index + 1} ratio</span>
+                  <input
+                    id={`gear-ratio-${index + 1}`}
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.01"
+                    value={ratio}
+                    aria-invalid={
+                      drivetrainIssues.some((issue) =>
+                        issue.path.includes(`gearRatios[${index + 1}]`),
+                      ) || undefined
+                    }
+                    onChange={(event) => {
+                      setGearRatios((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index ? event.target.value : item,
+                        ),
+                      );
+                      setDrivetrainIssues([]);
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <button
+            type="button"
+            onClick={stageDrivetrainConfig}
+            disabled={!canStageDrivetrainConfig}
+          >
+            Apply drivetrain settings
+          </button>
+        </section>
 
         <section
           className="config-editor"
@@ -530,6 +687,12 @@ export function App() {
             </dd>
           </div>
           <div>
+            <dt>Vehicle speed</dt>
+            <dd data-testid="vehicle-speed" aria-label="Vehicle speed">
+              {displayVehicleSpeed} km/h
+            </dd>
+          </div>
+          <div>
             <dt>Effective throttle</dt>
             <dd data-testid="effective-throttle">
               {Math.round(snapshot.telemetry.effectiveThrottle * 100)}%
@@ -550,4 +713,8 @@ export function App() {
       </section>
     </main>
   );
+}
+
+function gearOrdinal(gear: number): string {
+  return gear === 1 ? "st" : gear === 2 ? "nd" : gear === 3 ? "rd" : "th";
 }
