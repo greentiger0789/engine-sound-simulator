@@ -307,7 +307,7 @@ export class AudioController {
     if (this.snapshot.status !== "idle" && !recoveringRejectedConfig) {
       return { ok: false, reason: "audio-active" };
     }
-    const parsed = parseEngineConfig(input, { maxCylinders: 4 });
+    const parsed = parseEngineConfig(input, { maxCylinders: 8 });
     if (!parsed.ok) {
       return { ok: false, reason: "validation", issues: parsed.issues };
     }
