@@ -1,4 +1,5 @@
-# Project-scoped defaults. Keep the parent model and permission policy unchanged.
+# Project-scoped fallbacks for unspecified children; select each ticket worker explicitly.
+# Keep the parent model and permission policy unchanged.
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 3

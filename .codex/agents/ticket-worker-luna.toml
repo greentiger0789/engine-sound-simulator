@@ -1,7 +1,7 @@
 name = "ticket-worker-luna"
-description = "Implement a small, explicit ticket subtask with limited impact in assigned files."
+description = "Implement a bounded ticket subtask with a settled contract and clear checks in assigned files."
 model = "gpt-6-luna"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "high"
 developer_instructions = """
 Work only on the assigned paths and explicit acceptance criteria. Other agents share the workspace.
 Do not overwrite other edits, spawn agents, switch branches, stage, commit, push, or create PRs.

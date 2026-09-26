@@ -17,7 +17,7 @@ This repository's ticket request includes implementation, commits, push and Draf
 
 ## Implement and verify
 
-- Translate acceptance criteria into a short working checklist. Choose the smallest useful split and follow [orchestration.md](references/orchestration.md). The orchestrator owns shared configuration, interfaces and repository mutations.
+- Translate acceptance criteria into a short working checklist. Choose the smallest useful split, select a model for each assigned subtask before spawning it, and follow [orchestration.md](references/orchestration.md). The orchestrator owns shared configuration, interfaces and repository mutations.
 - Implement the selected scope. Add tests that distinguish correct behavior from plausible failures; do not write tests that only mirror implementation details. Use the ticket's Docker commands, adding missing commands only if this ticket defines them.
 - No placeholder test success, ignored failures, relaxed main protection, fabricated manual results, or unrelated redesign to complete a ticket.
 - This is an owner-driven hobby project, not a current public-release gate. Accept an explicit owner report as evidence for the manual behavior it actually describes, even if detailed environment or measurement fields are absent; record those limits without inventing values. The owner may explicitly narrow or defer manual browser, listening, performance, hosting, or deployment criteria. If that revises an existing ticket contract, deliver the ticket/plan/report policy change as a prerequisite PR and wait for it to reach `origin/main` before starting a dependent ticket. This does not waive automated acceptance, current regressions, required CI, or safety rules.

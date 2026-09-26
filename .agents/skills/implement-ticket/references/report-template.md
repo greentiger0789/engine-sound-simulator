@@ -18,7 +18,7 @@ For manual checks in this owner-driven hobby project, an explicit owner report i
 
 ## Review
 
-Self-review scope and result. Independent reviewer role/model when available, findings, corrections and final recheck. Explain serial fallback if delegation was unavailable. List any unresolved questions separately.
+Self-review scope and result. For each delegated task, record its scope, selected and observed model/effort, and a brief reason for the choice or fallback. Record the independent reviewer role/model, findings, corrections and final recheck. Explain serial fallback if delegation was unavailable. List any unresolved questions separately. Do not infer cost savings from a model name alone.
 
 ## Verification
 
