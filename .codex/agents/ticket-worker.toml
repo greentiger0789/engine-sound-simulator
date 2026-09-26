@@ -1,5 +1,5 @@
 name = "ticket-worker"
-description = "Implement a bounded part of one engine-simulator ticket in explicitly owned files."
+description = "Implement a ticket subtask that needs cross-module reasoning or contract discovery."
 model = "gpt-6-sol"
 model_reasoning_effort = "medium"
 developer_instructions = """
