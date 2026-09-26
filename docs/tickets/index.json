@@ -206,5 +206,45 @@
     "milestone": "M1",
     "depends_on": [4],
     "file": "docs/tickets/026-node26-typescript7-toolchain.md"
+  },
+  {
+    "id": 27,
+    "slug": "responsive-dashboard",
+    "title": "レスポンシブ対応とPC向け横長ダッシュボード",
+    "milestone": "M6",
+    "depends_on": [19, 24],
+    "file": "docs/tickets/027-responsive-dashboard.md"
+  },
+  {
+    "id": 28,
+    "slug": "japanese-localization",
+    "title": "i18n基盤と日本語・英語の表示切替",
+    "milestone": "M6",
+    "depends_on": [27],
+    "file": "docs/tickets/028-japanese-localization.md"
+  },
+  {
+    "id": 29,
+    "slug": "displacement-model",
+    "title": "排気量の設定契約と回転モデルへの反映",
+    "milestone": "M6",
+    "depends_on": [24],
+    "file": "docs/tickets/029-displacement-model.md"
+  },
+  {
+    "id": 30,
+    "slug": "displacement-sound-and-controls",
+    "title": "排気量の編集UIと燃焼音への反映",
+    "milestone": "M6",
+    "depends_on": [28, 29],
+    "file": "docs/tickets/030-displacement-sound-and-controls.md"
+  },
+  {
+    "id": 31,
+    "slug": "high-rpm-envelope",
+    "title": "高回転域の対応範囲とレッドライン拡張",
+    "milestone": "M6",
+    "depends_on": [24],
+    "file": "docs/tickets/031-high-rpm-envelope.md"
   }
 ]

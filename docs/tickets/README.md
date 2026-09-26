@@ -12,34 +12,39 @@
 
 ## チケット一覧
 
-| ID  | マイルストーン | 件名                                                                | 依存           | 並行レーン |
-| --- | -------------- | ------------------------------------------------------------------- | -------------- | ---------- |
-| 1   | M1             | [Web 基盤](001-web-foundation.md)                                   | —              | A          |
-| 2   | M1             | [Worklet build contract](002-worklet-build-contract.md)             | 1              | A          |
-| 3   | M1             | [開始/停止の縦切り](003-audio-start-stop-slice.md)                  | 1, 2           | A          |
-| 4   | M1             | [テストとCI](004-test-and-ci-baseline.md)                           | 1, 2, 3        | A          |
-| 5   | M2             | [config と単気筒 preset](005-engine-config-and-single-preset.md)    | 1, 4           | B          |
-| 6   | M2             | [回転モデル](006-rotational-dynamics.md)                            | 5              | B          |
-| 7   | M2             | [位相と燃焼 event](007-phase-and-firing-events.md)                  | 5, 6           | B          |
-| 8   | M2             | [pulse と保護](008-single-cylinder-pulse-and-protection.md)         | 6, 7           | B          |
-| 9   | M2             | [単気筒統合](009-single-cylinder-worklet-integration.md)            | 3, 5, 6, 7, 8  | B          |
-| 10  | M3             | [多気筒 preset](010-multicylinder-config-and-presets.md)            | 5, 7           | C          |
-| 11  | M3             | [安全な位相 editor](011-config-editor-safe-apply.md)                | 3, 5, 9, 10    | C          |
-| 12  | M3             | [アクセルと負荷](012-throttle-and-load-controls.md)                 | 6, 9           | D          |
-| 13  | M3             | [波形とFFT](013-waveform-and-spectrum.md)                           | 9, 10, 11      | C          |
-| 14  | M3             | [M3回帰/受け入れ](014-m3-regression-and-usable-demo.md)             | 10, 11, 12, 13 | C+D        |
-| 15  | M4             | [吸排気共鳴](015-intake-exhaust-resonators.md)                      | 8, 14          | E          |
-| 16  | M4             | [機械音/ばらつき](016-mechanical-noise-and-seeded-variation.md)     | 8, 15          | E          |
-| 17  | M4             | [aliasing/bank土台](017-aliasing-and-bank-path-foundation.md)       | 10, 15, 16     | E          |
-| 18  | M4             | [M4品質レビュー](018-m4-sound-quality-review.md)                    | 15, 16, 17     | E          |
-| 19  | M5             | [a11y/lifecycle](019-accessibility-and-audio-lifecycle.md)          | 14, 18         | F          |
-| 20  | M5             | [実ブラウザ/長時間](020-browser-and-long-run-validation.md)         | 14, 17, 19     | F          |
-| 21  | M5             | [配信/hosting判断](021-production-delivery-and-hosting-decision.md) | 1, 20          | G          |
-| 22  | M6             | [2ストローク](022-two-stroke-cycle-support.md)                      | 10, 20         | H          |
-| 23  | M6             | [V型/自動車 preset](023-v-and-automotive-presets.md)                | 17, 20, 22     | H          |
-| 24  | M6             | [drivetrain/gear](024-drivetrain-load-and-gear.md)                  | 6, 20, 23      | H          |
-| 25  | M3             | [Oxlint移行](025-oxlint-migration.md)                               | 4              | I          |
-| 26  | M1             | [Node 26 / TypeScript 7移行](026-node26-typescript7-toolchain.md)   | 4              | J          |
+| ID  | マイルストーン | 件名                                                                      | 依存           | 並行レーン |
+| --- | -------------- | ------------------------------------------------------------------------- | -------------- | ---------- |
+| 1   | M1             | [Web 基盤](001-web-foundation.md)                                         | —              | A          |
+| 2   | M1             | [Worklet build contract](002-worklet-build-contract.md)                   | 1              | A          |
+| 3   | M1             | [開始/停止の縦切り](003-audio-start-stop-slice.md)                        | 1, 2           | A          |
+| 4   | M1             | [テストとCI](004-test-and-ci-baseline.md)                                 | 1, 2, 3        | A          |
+| 5   | M2             | [config と単気筒 preset](005-engine-config-and-single-preset.md)          | 1, 4           | B          |
+| 6   | M2             | [回転モデル](006-rotational-dynamics.md)                                  | 5              | B          |
+| 7   | M2             | [位相と燃焼 event](007-phase-and-firing-events.md)                        | 5, 6           | B          |
+| 8   | M2             | [pulse と保護](008-single-cylinder-pulse-and-protection.md)               | 6, 7           | B          |
+| 9   | M2             | [単気筒統合](009-single-cylinder-worklet-integration.md)                  | 3, 5, 6, 7, 8  | B          |
+| 10  | M3             | [多気筒 preset](010-multicylinder-config-and-presets.md)                  | 5, 7           | C          |
+| 11  | M3             | [安全な位相 editor](011-config-editor-safe-apply.md)                      | 3, 5, 9, 10    | C          |
+| 12  | M3             | [アクセルと負荷](012-throttle-and-load-controls.md)                       | 6, 9           | D          |
+| 13  | M3             | [波形とFFT](013-waveform-and-spectrum.md)                                 | 9, 10, 11      | C          |
+| 14  | M3             | [M3回帰/受け入れ](014-m3-regression-and-usable-demo.md)                   | 10, 11, 12, 13 | C+D        |
+| 15  | M4             | [吸排気共鳴](015-intake-exhaust-resonators.md)                            | 8, 14          | E          |
+| 16  | M4             | [機械音/ばらつき](016-mechanical-noise-and-seeded-variation.md)           | 8, 15          | E          |
+| 17  | M4             | [aliasing/bank土台](017-aliasing-and-bank-path-foundation.md)             | 10, 15, 16     | E          |
+| 18  | M4             | [M4品質レビュー](018-m4-sound-quality-review.md)                          | 15, 16, 17     | E          |
+| 19  | M5             | [a11y/lifecycle](019-accessibility-and-audio-lifecycle.md)                | 14, 18         | F          |
+| 20  | M5             | [実ブラウザ/長時間](020-browser-and-long-run-validation.md)               | 14, 17, 19     | F          |
+| 21  | M5             | [配信/hosting判断](021-production-delivery-and-hosting-decision.md)       | 1, 20          | G          |
+| 22  | M6             | [2ストローク](022-two-stroke-cycle-support.md)                            | 10, 20         | H          |
+| 23  | M6             | [V型/自動車 preset](023-v-and-automotive-presets.md)                      | 17, 20, 22     | H          |
+| 24  | M6             | [drivetrain/gear](024-drivetrain-load-and-gear.md)                        | 6, 20, 23      | H          |
+| 25  | M3             | [Oxlint移行](025-oxlint-migration.md)                                     | 4              | I          |
+| 26  | M1             | [Node 26 / TypeScript 7移行](026-node26-typescript7-toolchain.md)         | 4              | J          |
+| 27  | M6             | [レスポンシブ対応とPC向け横長ダッシュボード](027-responsive-dashboard.md) | 19, 24         | K          |
+| 28  | M6             | [i18n基盤と日本語・英語の表示切替](028-japanese-localization.md)          | 27             | K          |
+| 29  | M6             | [排気量の設定契約と回転モデルへの反映](029-displacement-model.md)         | 24             | L          |
+| 30  | M6             | [排気量の編集UIと燃焼音への反映](030-displacement-sound-and-controls.md)  | 28, 29         | L          |
+| 31  | M6             | [高回転域の対応範囲とレッドライン拡張](031-high-rpm-envelope.md)          | 24             | M          |
 
 ## DAG と並行レーン
 
@@ -74,6 +79,15 @@ flowchart LR
   T23[23] --> T24[24]
   T4[4] --> T25[25]
   T4[4] --> T26[26]
+  T19[19] --> T27[27]
+  T24[24] --> T27[27]
+  T27[27] --> T28[28]
+  T24[24] --> T29[29]
+  T28[28] --> T30[30]
+  T29[29] --> T30[30]
+  T24[24] --> T31[31]
 ```
 
 レーンAは基盤を直列に確定する。M2以降は、依存が verified になった時点で C/D や、M4の関連作業を部分的に並行化できる。レーンIとJは機能DAGと独立した開発基盤更新である。Ticket 25は現在 blocked であり、Ticket 26は現行ESLint経路を前提にする。将来Ticket 25が verified になった場合だけそのlint経路を引き継ぐ。両チケットはlint依存を共有するため同時に実装しない。DAGにない共有ファイルを同時に編集する場合は、一方を小さな先行PRにする。
+
+レーンKはレスポンシブ/PCレイアウト（27）→日英i18n（28）、レーンLは排気量モデル（29）を扱う。27と29は独立して着手可能だが共有App/configの変更は調整する。30で日英UIと排気量の音声反映を統合する。レーンMは高回転域の上限見直し（31）を扱い、24の完了後に独立して着手できる。これらはM6の追加計画であり、既存チケットの完了条件を遡って変更しない。
