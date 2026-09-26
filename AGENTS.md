@@ -16,7 +16,7 @@ This is an owner-driven hobby project and is not currently gated for a public pr
 
 ## Delegation and quality
 
-The user requests cost-conscious subagents. Use `gpt-5.6-terra` with `medium` effort for bounded workers; use a fresh Terra reviewer with `high` effort for substantive implementation. Delegate independent work only, normally at most two writers with non-overlapping ownership, reserving a slot for review. The orchestrator owns Git, shared configuration, integration, and the final review. See the skill for model fallback and tool-specific invocation.
+The user requests cost-conscious subagents. Assign `gpt-6-luna` / `medium` only to small, explicit, low-impact subtasks; use `gpt-6-sol` / `medium` for implementation needing contract discovery or cross-file reasoning, and a fresh `gpt-6-sol` / `high` reviewer for substantive implementation. `gpt-5.6-terra` / `medium` remains available when observed task quality, latency, or availability makes it the better fit. Judge uncertainty and impact as well as file count; escalate a Luna task when its scope proves unclear. Delegate independent work only, normally at most two writers with non-overlapping ownership, reserving a slot for review. The orchestrator owns Git, shared configuration, integration, and the final review. See the skill for model fallback and tool-specific invocation.
 
 Workers must not delegate recursively or commit/push/create PRs. Pass only the task, acceptance criteria, owned paths, and required contracts. Do not fork the entire conversation when selecting a lower-cost model.
 
