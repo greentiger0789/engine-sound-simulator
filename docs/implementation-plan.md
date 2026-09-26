@@ -124,7 +124,7 @@ MVP の始動は idle 回転への短い遷移とし、idle 制御で維持す�
 
 `EngineConfig` に `schemaVersion`、`id`、`vehicleKind`、`cycleDegrees`、`cylinders[]`、`idleRpm`、`redlineRpm`、`inertiaKgM2`、トルク曲線、吸排気パラメーターを持たせる。各気筒は `id`、`firingAngleDeg`、`bankId`、燃焼強度を持つ。気筒数は配列長から求め、二重管理しない。
 
-MVP の UI は1〜4気筒、4ストロークに限定する。core は可変長の気筒配列を扱い、上限を設定検証側に置く。自動車拡張時は6 / 8 / 12気筒や複数バンクの計算量を測って対応範囲を広げる。
+MVP の UI は1〜4気筒、4ストロークに限定する。core は可変長の気筒配列を扱い、上限を設定検証側に置く。M6 では UI と Worklet の構成上限を8気筒へ広げ、6 / 8気筒の複数バンクを検証する。12気筒は性能と対応範囲を別途判断する。
 
 NaN / Infinity、負の慣性、位相の範囲外、重複 ID、空の気筒配列、idle と redline の逆転、不正なトルク曲線を拒否する。UI と Worklet の境界で検証し、失敗時は最後の正常構成を維持する。
 

@@ -16,6 +16,7 @@ import type {
   EngineConfigValidationIssue,
 } from "../engine/config";
 import { multiCylinderPresets } from "../presets/multicylinder";
+import { vEightPreset, vSixPreset } from "../presets/automotive";
 import {
   singleCylinderPreset,
   twoStrokeSingleCylinderPreset,
@@ -29,6 +30,8 @@ const availablePresets: readonly EnginePreset[] = [
   singleCylinderPreset,
   twoStrokeSingleCylinderPreset,
   ...multiCylinderPresets,
+  vSixPreset,
+  vEightPreset,
 ];
 
 function phaseValues(config: EngineConfig): string[] {
@@ -439,6 +442,12 @@ export function App() {
               ))}
             </select>
           </label>
+
+          <p className="cycle-description" data-testid="preset-limitations">
+            Available presets: 1–4, 6, and 8 cylinders. Configuration limit: 8
+            cylinders. Presets use synthetic model values, not measurements of
+            real engines or vehicles.
+          </p>
 
           <fieldset disabled={!canStageConfig}>
             <legend>燃焼位相（{draftConfig.cycleDegrees}°周期）</legend>

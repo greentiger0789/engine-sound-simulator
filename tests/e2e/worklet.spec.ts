@@ -624,7 +624,10 @@ test("stages preset phase edits from the keyboard without creating audio", async
 
   const preset = page.getByLabel("Engine preset");
   await preset.focus();
-  await page.keyboard.press("End");
+  await page.keyboard.press("Home");
+  for (let index = 0; index < 6; index += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
   await expect(preset).toHaveValue("evenly-spaced-four-model");
   await expect(page.getByText("燃焼位相（720°周期）")).toBeVisible();
   await expect(page.getByLabel("Cylinder 4 phase (degrees)")).toHaveValue(
@@ -700,6 +703,52 @@ test("applies a stopped two-stroke 360-degree configuration and starts it", asyn
 
   await page.getByRole("button", { name: "Stop audio" }).click();
   await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});
+
+test("stages and starts the six- and eight-cylinder model presets in the native Worklet", async ({
+  page,
+}) => {
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+
+  await expect(page.getByTestId("preset-limitations")).toContainText(
+    "Available presets: 1–4, 6, and 8 cylinders",
+  );
+  await expect(page.getByTestId("preset-limitations")).toContainText(
+    "Configuration limit: 8 cylinders",
+  );
+  await expect(page.getByTestId("preset-limitations")).toContainText(
+    "synthetic model values",
+  );
+
+  for (const { id, cylinderCount, lastPhase } of [
+    { id: "even-fire-v6-model", cylinderCount: 6, lastPhase: "600" },
+    { id: "even-fire-v8-model", cylinderCount: 8, lastPhase: "630" },
+  ]) {
+    await page.getByLabel("Engine preset").selectOption(id);
+    await expect(
+      page.getByLabel(`Cylinder ${cylinderCount} phase (degrees)`),
+    ).toHaveValue(lastPhase);
+    await page.getByRole("button", { name: "Apply for next start" }).click();
+    await expect(page.getByTestId("pending-config")).toHaveText(id);
+
+    await page.getByRole("button", { name: "Start audio" }).click();
+    await expect(page.getByTestId("audio-status")).toHaveText("running");
+    await expect(page.getByTestId("active-config")).toHaveText(id);
+    await expect(page.getByTestId("pending-config")).toHaveText(
+      "No pending configuration",
+    );
+    await expect(page.getByTestId("firing-event")).toHaveCount(cylinderCount);
+    await expect(page.getByTestId("firing-event-label").last()).toContainText(
+      `${lastPhase}°`,
+    );
+
+    await page.getByRole("button", { name: "Stop audio" }).click();
+    await expect(page.getByTestId("audio-status")).toHaveText("idle");
+  }
+  await expect
+    .poll(() => audioGraphCount(page, "__e2eAudioWorkletNodeCount"))
+    .toBe(2);
 });
 
 test("announces multiple invalid phases once and focuses the first invalid field", async ({
@@ -1126,7 +1175,10 @@ test("supports keyboard controls, explicit visibility resume, and processor reco
   // programmatic names keyboard and assistive-technology users depend on.
   const preset = page.getByLabel("Engine preset");
   await preset.focus();
-  await page.keyboard.press("End");
+  await page.keyboard.press("Home");
+  for (let index = 0; index < 6; index += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
   await expect(preset).toHaveValue("evenly-spaced-four-model");
   const phase = page.getByLabel("Cylinder 4 phase (degrees)");
   await phase.focus();
