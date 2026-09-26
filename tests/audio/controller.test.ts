@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AudioController } from "../../src/audio/controller";
 import { singleCylinderPreset } from "../../src/presets/single-cylinder";
+import { DEFAULT_DRIVETRAIN_CONFIG } from "../../src/engine/drivetrain";
 
 class FakeAudioParam {
   value = 1;
@@ -77,6 +78,10 @@ class FakeAnalyserNode {
 
 class FakePort {
   onmessage: ((event: MessageEvent) => void) | null = null;
+  readonly messages: unknown[] = [];
+  postMessage(message: unknown): void {
+    this.messages.push(message);
+  }
 }
 
 class FakeAudioWorkletNode {
@@ -87,6 +92,7 @@ class FakeAudioWorkletNode {
     ["gain", new FakeAudioParam()],
     ["throttle", new FakeAudioParam()],
     ["loadTorqueNm", new FakeAudioParam()],
+    ["clutch", new FakeAudioParam()],
   ]);
   onprocessorerror: (() => void) | null = null;
   disconnected = false;
@@ -300,6 +306,58 @@ describe("AudioController", () => {
 
     controller.setLoadTorque(12.5);
     expect(load.calls).toContainEqual(["set", 12.5, 10]);
+  });
+
+  it("validates stopped vehicle configuration and carries gear and clutch across a restart", async () => {
+    const controller = new AudioController();
+    expect(
+      controller.stageDrivetrainConfig({
+        ...DEFAULT_DRIVETRAIN_CONFIG,
+        vehicleMassKg: -1,
+      }),
+    ).toMatchObject({ ok: false, issues: [{ path: "$.vehicleMassKg" }] });
+    expect(
+      controller.stageDrivetrainConfig({
+        ...DEFAULT_DRIVETRAIN_CONFIG,
+        gearRatios: [0, -2],
+      }),
+    ).toMatchObject({ ok: false, issues: [{ path: "$.gearRatios[1]" }] });
+    expect(controller.getSnapshot().drivetrainConfig).toEqual(
+      DEFAULT_DRIVETRAIN_CONFIG,
+    );
+    controller.setDrivetrainGear(1);
+    controller.setClutch(0.7);
+    await controller.start();
+    const firstNode = FakeAudioWorkletNode.instances[0];
+    expect(firstNode.options?.processorOptions).toMatchObject({
+      config: { drivetrainGear: 1, drivetrain: DEFAULT_DRIVETRAIN_CONFIG },
+    });
+    expect(firstNode.parameters.get("clutch")?.calls).toContainEqual([
+      "set",
+      0.7,
+      10,
+    ]);
+    expect(controller.stageDrivetrainConfig(DEFAULT_DRIVETRAIN_CONFIG)).toEqual(
+      {
+        ok: false,
+        reason: "audio-active",
+      },
+    );
+    controller.setDrivetrainGear(2);
+    expect(firstNode.port.messages).toContainEqual({
+      type: "set-drivetrain-gear",
+      gear: 2,
+    });
+    const stopping = controller.stop();
+    await vi.advanceTimersByTimeAsync(30);
+    await stopping;
+    await controller.start();
+    expect(
+      FakeAudioWorkletNode.instances[1].options?.processorOptions,
+    ).toMatchObject({
+      config: { drivetrainGear: 2 },
+    });
+    expect(controller.getSnapshot().telemetry.vehicleSpeedMps).toBe(0);
   });
 
   it("uses the calibrated reference gain while retaining the processor gain path", async () => {

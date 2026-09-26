@@ -80,10 +80,27 @@ export function App() {
   const [validationIssues, setValidationIssues] = useState<
     readonly EngineConfigValidationIssue[]
   >([]);
+  const [vehicleMassKg, setVehicleMassKg] = useState(() =>
+    String(snapshot.drivetrainConfig.vehicleMassKg),
+  );
+  const [gearRatios, setGearRatios] = useState(() =>
+    snapshot.drivetrainConfig.gearRatios.slice(1).map(String),
+  );
+  const [drivetrainIssues, setDrivetrainIssues] = useState<
+    readonly { readonly path: string; readonly message: string }[]
+  >([]);
   const holdingPointerThrottle = useRef(false);
   const holdingPointerId = useRef<number | null>(null);
   const holdingKeyboardThrottle = useRef(false);
+  const clutchBeforeKeyboard = useRef<number | null>(null);
   const firstInvalidPhaseRef = useRef<HTMLInputElement>(null);
+
+  const releaseKeyboardClutch = useCallback(() => {
+    const priorClutch = clutchBeforeKeyboard.current;
+    if (priorClutch === null) return;
+    clutchBeforeKeyboard.current = null;
+    controller.setClutch(priorClutch);
+  }, [controller]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -103,13 +120,14 @@ export function App() {
 
   useEffect(() => {
     const handleVisibilityChange = () => {
+      if (document.hidden) releaseKeyboardClutch();
       void controller.handleVisibilityChange(document.hidden);
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [controller]);
+  }, [controller, releaseKeyboardClutch]);
 
   const start = useCallback(() => {
     void controller.start();
@@ -164,25 +182,85 @@ export function App() {
       return (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
         target.isContentEditable
       );
     };
     const keyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || isEditingText(event.target)) return;
-      event.preventDefault();
-      holdingKeyboardThrottle.current = true;
-      syncHoldThrottle();
+      if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
+        if (clutchBeforeKeyboard.current !== null) controller.setClutch(0);
+        return;
+      }
+      if (event.code === "KeyC") {
+        if (
+          isEditingText(event.target) ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey
+        )
+          return;
+        event.preventDefault();
+        if (event.repeat && clutchBeforeKeyboard.current !== null) return;
+        clutchBeforeKeyboard.current ??= controller.getSnapshot().clutch;
+        controller.setClutch(event.shiftKey ? 0 : 0.5);
+        return;
+      }
+      if (event.code === "ArrowUp" || event.code === "ArrowDown") {
+        if (
+          isEditingText(event.target) ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey
+        )
+          return;
+        event.preventDefault();
+        if (event.repeat) return;
+        const { drivetrainGear, drivetrainConfig } = controller.getSnapshot();
+        const lastGear = drivetrainConfig.gearRatios.length - 1;
+        const nextGear =
+          event.code === "ArrowUp"
+            ? drivetrainGear === 1
+              ? 0
+              : drivetrainGear === 0
+                ? Math.min(2, lastGear)
+                : Math.min(drivetrainGear + 1, lastGear)
+            : drivetrainGear === 2
+              ? 0
+              : drivetrainGear === 0
+                ? 1
+                : Math.max(1, drivetrainGear - 1);
+        controller.setDrivetrainGear(nextGear);
+        return;
+      }
+      if (event.code === "Space" && !isEditingText(event.target)) {
+        event.preventDefault();
+        holdingKeyboardThrottle.current = true;
+        syncHoldThrottle();
+      }
     };
     const keyUp = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || !holdingKeyboardThrottle.current) return;
-      event.preventDefault();
-      releaseKeyboardThrottle();
+      if (event.code === "KeyC" && clutchBeforeKeyboard.current !== null) {
+        event.preventDefault();
+        releaseKeyboardClutch();
+      } else if (
+        (event.code === "ShiftLeft" || event.code === "ShiftRight") &&
+        clutchBeforeKeyboard.current !== null &&
+        !event.shiftKey
+      ) {
+        controller.setClutch(0.5);
+      } else if (event.code === "Space" && holdingKeyboardThrottle.current) {
+        event.preventDefault();
+        releaseKeyboardThrottle();
+      }
     };
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
     const pointerUp = (event: PointerEvent) =>
       releasePointerThrottle(event.pointerId);
-    const blur = () => releaseAllHoldThrottle();
+    const blur = () => {
+      releaseAllHoldThrottle();
+      releaseKeyboardClutch();
+    };
     window.addEventListener("pointerup", pointerUp);
     window.addEventListener("pointercancel", pointerUp);
     window.addEventListener("blur", blur);
@@ -193,10 +271,13 @@ export function App() {
       window.removeEventListener("pointercancel", pointerUp);
       window.removeEventListener("blur", blur);
       releaseAllHoldThrottle();
+      releaseKeyboardClutch();
     };
   }, [
+    controller,
     releaseAllHoldThrottle,
     releaseKeyboardThrottle,
+    releaseKeyboardClutch,
     releasePointerThrottle,
     syncHoldThrottle,
   ]);
@@ -242,6 +323,27 @@ export function App() {
     }
   }, [controller, draftConfig, phases]);
 
+  const stageDrivetrainConfig = useCallback(() => {
+    const result = controller.stageDrivetrainConfig({
+      ...snapshot.drivetrainConfig,
+      vehicleMassKg:
+        vehicleMassKg.trim() === "" ? Number.NaN : Number(vehicleMassKg),
+      gearRatios: [
+        0,
+        ...gearRatios.map((ratio) =>
+          ratio.trim() === "" ? Number.NaN : Number(ratio),
+        ),
+      ],
+    });
+    if (result.ok) {
+      setVehicleMassKg(String(result.value.vehicleMassKg));
+      setGearRatios(result.value.gearRatios.slice(1).map(String));
+      setDrivetrainIssues([]);
+    } else if ("issues" in result) {
+      setDrivetrainIssues(result.issues);
+    }
+  }, [controller, gearRatios, snapshot.drivetrainConfig, vehicleMassKg]);
+
   const isStartingOrRunning =
     snapshot.status === "starting" || snapshot.status === "running";
   const canStop =
@@ -252,9 +354,14 @@ export function App() {
   const canStageConfig =
     snapshot.status === "idle" ||
     (snapshot.status === "error" && snapshot.error?.code === "config-rejected");
+  const canStageDrivetrainConfig = snapshot.status === "idle";
   const firstInvalidPhaseIndex = draftConfig.cylinders.findIndex((_, index) =>
     Boolean(phaseIssue(validationIssues, index)),
   );
+  const vehicleSpeedKmh = snapshot.telemetry.vehicleSpeedMps * 3.6;
+  const displayVehicleSpeed = Number.isFinite(vehicleSpeedKmh)
+    ? vehicleSpeedKmh.toFixed(1)
+    : "—";
   return (
     <main className="app-shell">
       <section aria-labelledby="app-title" className="controller-area">
@@ -295,6 +402,54 @@ export function App() {
         ) : null}
 
         <div className="control-stack">
+          <label className="drivetrain-control" htmlFor="drivetrain-gear">
+            <span>Gear</span>
+            <select
+              id="drivetrain-gear"
+              aria-describedby="drivetrain-keyboard-help"
+              value={snapshot.drivetrainGear}
+              onChange={(event) =>
+                controller.setDrivetrainGear(Number(event.target.value))
+              }
+            >
+              {snapshot.drivetrainConfig.gearRatios
+                .map((_, index) => (index === 0 ? 1 : index === 1 ? 0 : index))
+                .map((index) => (
+                  <option key={index} value={index}>
+                    {index === 0
+                      ? "Neutral"
+                      : `${index}${gearOrdinal(index)} gear`}
+                  </option>
+                ))}
+            </select>
+          </label>
+
+          <label className="range-control" htmlFor="clutch">
+            <span>Clutch engagement</span>
+            <input
+              id="clutch"
+              aria-describedby="drivetrain-keyboard-help"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={snapshot.clutch}
+              aria-valuetext={`${Math.round(snapshot.clutch * 100)} percent engaged`}
+              onChange={(event) => {
+                const coupling = Number(event.target.value);
+                if (clutchBeforeKeyboard.current !== null) {
+                  clutchBeforeKeyboard.current = coupling;
+                  controller.setClutch(controller.getSnapshot().clutch);
+                } else {
+                  controller.setClutch(coupling);
+                }
+              }}
+            />
+            <output htmlFor="clutch" data-testid="clutch-value">
+              {Math.round(snapshot.clutch * 100)}%
+            </output>
+          </label>
+
           <label className="range-control" htmlFor="volume">
             <span>Volume</span>
             <input
@@ -394,6 +549,96 @@ export function App() {
             Mute audio
           </label>
         </div>
+
+        <p className="cycle-description" id="drivetrain-keyboard-help">
+          Keyboard: ↑ / ↓ shifts through 1, Neutral, 2 and higher gears. Hold C
+          for half clutch; hold Shift+C to disengage fully. Release C to restore
+          the slider setting.
+        </p>
+
+        <section
+          className="drivetrain-config-editor"
+          aria-labelledby="drivetrain-config-title"
+        >
+          <header className="config-editor-header">
+            <div>
+              <p className="eyebrow">Vehicle setup</p>
+              <h2 id="drivetrain-config-title">Drivetrain configuration</h2>
+            </div>
+          </header>
+          {drivetrainIssues.length > 0 ? (
+            <ul className="validation-summary" role="alert">
+              {drivetrainIssues.map((issue, index) => (
+                <li key={`${issue.path}-${index}`}>
+                  {issue.path}: {issue.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <label className="phase-control" htmlFor="vehicle-mass">
+            <span>Vehicle mass (kg)</span>
+            <input
+              id="vehicle-mass"
+              type="number"
+              min="1"
+              max="100000"
+              step="1"
+              value={vehicleMassKg}
+              disabled={!canStageDrivetrainConfig}
+              aria-invalid={
+                drivetrainIssues.some((issue) =>
+                  issue.path.includes("vehicleMassKg"),
+                ) || undefined
+              }
+              onChange={(event) => {
+                setVehicleMassKg(event.target.value);
+                setDrivetrainIssues([]);
+              }}
+            />
+          </label>
+          <fieldset disabled={!canStageDrivetrainConfig}>
+            <legend>Forward gear ratios</legend>
+            <div className="drivetrain-ratios">
+              {gearRatios.map((ratio, index) => (
+                <label
+                  className="phase-control"
+                  htmlFor={`gear-ratio-${index + 1}`}
+                  key={index}
+                >
+                  <span>Gear {index + 1} ratio</span>
+                  <input
+                    id={`gear-ratio-${index + 1}`}
+                    type="number"
+                    min="0.1"
+                    max="100"
+                    step="0.01"
+                    value={ratio}
+                    aria-invalid={
+                      drivetrainIssues.some((issue) =>
+                        issue.path.includes(`gearRatios[${index + 1}]`),
+                      ) || undefined
+                    }
+                    onChange={(event) => {
+                      setGearRatios((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index ? event.target.value : item,
+                        ),
+                      );
+                      setDrivetrainIssues([]);
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <button
+            type="button"
+            onClick={stageDrivetrainConfig}
+            disabled={!canStageDrivetrainConfig}
+          >
+            Apply drivetrain settings
+          </button>
+        </section>
 
         <section
           className="config-editor"
@@ -530,6 +775,12 @@ export function App() {
             </dd>
           </div>
           <div>
+            <dt>Vehicle speed</dt>
+            <dd data-testid="vehicle-speed" aria-label="Vehicle speed">
+              {displayVehicleSpeed} km/h
+            </dd>
+          </div>
+          <div>
             <dt>Effective throttle</dt>
             <dd data-testid="effective-throttle">
               {Math.round(snapshot.telemetry.effectiveThrottle * 100)}%
@@ -550,4 +801,8 @@ export function App() {
       </section>
     </main>
   );
+}
+
+function gearOrdinal(gear: number): string {
+  return gear === 1 ? "st" : gear === 2 ? "nd" : gear === 3 ? "rd" : "th";
 }

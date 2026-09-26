@@ -453,6 +453,48 @@ test("runs the product audio controls without creating audio before the user sta
   await expect(page.getByTestId("audio-status")).toHaveText("idle");
   await expect(page.getByRole("button", { name: "Stop audio" })).toBeDisabled();
   await expect(page.getByLabel("Mute audio")).not.toBeChecked();
+  await expect(
+    page.getByRole("combobox", { name: "Gear", exact: true }),
+  ).toHaveValue("0");
+  await expect(page.getByTestId("vehicle-speed")).toContainText("km/h");
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("vehicle-speed")
+        .evaluate((element) =>
+          Number.isFinite(Number.parseFloat(element.textContent ?? "")),
+        ),
+    )
+    .toBe(true);
+
+  const vehicleMass = page.getByLabel("Vehicle mass (kg)");
+  const firstGearRatio = page.getByLabel("Gear 1 ratio");
+  const applyDrivetrain = page.getByRole("button", {
+    name: "Apply drivetrain settings",
+  });
+  await vehicleMass.fill("-1");
+  await applyDrivetrain.click();
+  await expect(page.getByRole("alert")).toContainText(/mass/i);
+  await vehicleMass.fill("1200");
+  await firstGearRatio.fill("-0.5");
+  await applyDrivetrain.click();
+  await expect(page.getByRole("alert")).toContainText(/ratio/i);
+  await firstGearRatio.fill("3.2");
+  await applyDrivetrain.click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(vehicleMass).toHaveValue("1200");
+  await expect(firstGearRatio).toHaveValue("3.2");
+
+  await page
+    .getByRole("combobox", { name: "Gear", exact: true })
+    .selectOption("1");
+  await expect(
+    page.getByRole("combobox", { name: "Gear", exact: true }),
+  ).toHaveValue("1");
+  await page.getByLabel("Clutch engagement").fill("0.4");
+  await expect(page.getByLabel("Clutch engagement")).toHaveValue("0.4");
+  await expect(page.getByTestId("clutch-value")).toHaveText("40%");
+
   await expect
     .poll(() => audioGraphCount(page, "__e2eAudioContextCount"))
     .toBe(0);
@@ -470,6 +512,15 @@ test("runs the product audio controls without creating audio before the user sta
   await expect(page.getByLabel("Volume")).toHaveValue("0.35");
   await page.getByLabel("Throttle").fill("0.5");
   await expect(page.getByLabel("Throttle")).toHaveValue("0.5");
+  await expect
+    .poll(
+      async () =>
+        Number.parseFloat(
+          (await page.getByTestId("vehicle-speed").textContent()) ?? "0",
+        ),
+      { timeout: 10_000 },
+    )
+    .toBeGreaterThan(0);
   await page.getByLabel("Opening percentage").fill("40");
   await expect(page.getByLabel("Throttle")).toHaveValue("0.4");
   const holdThrottle = page.getByRole("button", { name: "Hold accelerator" });
@@ -530,6 +581,76 @@ test("runs the product audio controls without creating audio before the user sta
     .toBe(2);
   await page.getByRole("button", { name: "Stop audio" }).click();
   await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});
+
+test("keyboard shifts through first, neutral, and second and holds the clutch", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const gear = page.getByRole("combobox", { name: "Gear", exact: true });
+  const clutch = page.getByLabel("Clutch engagement");
+  await expect(gear).toHaveValue("0");
+  await expect(clutch).toHaveValue("1");
+  await expect(gear.locator("option")).toHaveText([
+    "1st gear",
+    "Neutral",
+    "2nd gear",
+    "3rd gear",
+    "4th gear",
+    "5th gear",
+  ]);
+
+  await page.keyboard.press("ArrowDown");
+  await expect(gear).toHaveValue("1");
+  await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("0");
+  await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("2");
+  await page.keyboard.press("ArrowDown");
+  await expect(gear).toHaveValue("0");
+
+  await page.keyboard.down("c");
+  await expect(clutch).toHaveValue("0.5");
+  await clutch.fill("0.8");
+  await expect(clutch).toHaveValue("0.5");
+  await page.keyboard.down("Shift");
+  await expect(clutch).toHaveValue("0");
+  await page.keyboard.up("Shift");
+  await expect(clutch).toHaveValue("0.5");
+  await page.keyboard.up("c");
+  await expect(clutch).toHaveValue("0.8");
+
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.keyboard.down("Shift");
+  await page.keyboard.down("c");
+  await expect(clutch).toHaveValue("0");
+  await page.keyboard.up("c");
+  await expect(clutch).toHaveValue("0.8");
+  await page.keyboard.up("Shift");
+
+  await clutch.fill("0.8");
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.keyboard.down("c");
+  await expect(clutch).toHaveValue("0.5");
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(clutch).toHaveValue("0.8");
+  await page.keyboard.up("c");
+
+  await page.keyboard.down("c");
+  await expect(clutch).toHaveValue("0.5");
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(clutch).toHaveValue("0.8");
+  await page.keyboard.up("c");
+
+  await page.getByLabel("Vehicle mass (kg)").focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("0");
 });
 
 test("updates analyser canvases only for the live graph and cleans up on restart", async ({
