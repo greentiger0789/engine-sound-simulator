@@ -30,13 +30,13 @@
     "@vitejs/plugin-react": "6.1.1",
     "@playwright/test": "1.63.0",
     "@types/node": "24.13.4",
-    "eslint": "10.10.0",
+    "eslint": "10.11.0",
     "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.12.0",
-    "markdownlint-cli2": "0.23.2",
-    "prettier": "3.9.8",
+    "markdownlint-cli2": "0.23.3",
+    "prettier": "3.9.9",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.70.0",
+    "typescript-eslint": "8.70.1",
     "vite": "8.3.0",
     "vitest": "5.0.1"
   }
