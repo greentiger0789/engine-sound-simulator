@@ -2,7 +2,7 @@
 
 ## 目標
 
-Dependabot PR #19 と #25 を個別に取り込まず、Node.js 26 LTS、対応する Node.js 型定義、TypeScript 7、lint 周辺依存を互換性のある一組として更新する。実行環境、型検査、package metadata、Docker、CI、開発文書のバージョン契約を一致させる。
+Dependabot PR #19、#47、#49 を個別に取り込まず、Node.js 26 LTS、対応する Node.js 型定義、TypeScript 7、lint 周辺依存を互換性のある一組として更新する。実行環境、型検査、package metadata、Docker、CI、開発文書のバージョン契約を一致させる。
 
 ## 範囲 / 非対象
 
@@ -27,6 +27,11 @@ Dependabot PR #19 と #25 を個別に取り込まず、Node.js 26 LTS、対応�
 - [PR #25](https://github.com/greentiger0789/engine-sound-simulator/pull/25) は Docker の Node.js image だけを 24 から 26 へ更新し、`package.json` の `engines.node` と実装計画に残る Node.js 24 LTS 契約を更新しない。
 - [PR #33](https://github.com/greentiger0789/engine-sound-simulator/pull/33) は `@types/node` だけを 26 へ更新する。Node.js 24 の実行環境と型で利用可能な API がずれるため単独では取り込まず、本チケットの Node.js 26 移行時に同じ major へ揃える。
 
+2026-09-27 時点の後継 PR も同じ移行範囲に含める。
+
+- [PR #47](https://github.com/greentiger0789/engine-sound-simulator/pull/47) は Docker の Node.js image だけを 26.10.0 へ更新する。`engines.node` は Node.js 24 のままで、Node.js 26 はまだ Current である。
+- [PR #49](https://github.com/greentiger0789/engine-sound-simulator/pull/49) は `@types/node` だけを 26.6.2 へ更新する。実行環境の Node.js 24 と major が一致しない。
+
 Node.js 26 が Current の間は、Node.js 24 LTS を優先するとした実装計画の判断を維持する。TypeScript 7 についても、`--force` や `--legacy-peer-deps` で未対応 lint stack を導入しない。
 
 ## 実装契約と想定ファイル
@@ -37,7 +42,7 @@ Node.js 26 が Current の間は、Node.js 24 LTS を優先するとした実装
 - TypeScript 7 と、公式 peer range が TypeScript 7 を含む lint 周辺依存を一緒に更新する。Ticket 25 が先に完了して ESLint 系依存が除去されている場合は、実装時の lint 経路に合わせて対象を読み替え、ESLint を再導入しない。
 - TypeScript 7 の移行資料と compiler diagnostics を確認し、`tsconfig*.json`、Vite / Playwright 設定、app / audio / engine / test / tooling source の必要な互換修正を行う。strictness、project reference、`tsc --build` の検査範囲を弱めない。
 - `package-lock.json` は採用する Node.js/npm で再生成し、`npm ci` が peer warning の無視や install flag の追加なしで成功する状態にする。
-- `README.md`、`docs/implementation-plan.md`、開発手順にある Node.js / TypeScript / lint 構成の記述を実装後の契約へ更新する。Dependabot PR #19 / #25 / #33 の commit を機械的に重ねず、本チケットの単一ブランチで整合した差分を作る。
+- `README.md`、`docs/implementation-plan.md`、開発手順にある Node.js / TypeScript / lint 構成の記述を実装後の契約へ更新する。Dependabot PR #19 / #47 / #49 の commit を機械的に重ねず、本チケットの単一ブランチで整合した差分を作る。
 
 ## 受け入れ基準
 
@@ -46,7 +51,7 @@ Node.js 26 が Current の間は、Node.js 24 LTS を優先するとした実装
 - TypeScript strict、project reference、React Hooks lint、既存の browser / node globals と ignore、`Repository checks` gate の検出範囲を弱めない。
 - `npm run typecheck`、`npm run lint`、unit test、production build が Node.js 26 基盤で成功し、開発用と本番相当の Playwright E2E も `engines.node` を満たす test image で成功する。
 - アプリ、AudioWorklet、DSP、回転モデルの既存テスト結果と本番 bundle の責務境界に意図しない変更がない。
-- Dependabot PR #19 / #25 / #33 を別々に merge する必要がなく、本チケットの実装 PR だけで対象 toolchain の整合更新が完結する。
+- Dependabot PR #19 / #47 / #49 を別々に merge する必要がなく、本チケットの実装 PR だけで対象 toolchain の整合更新が完結する。
 
 ## Docker 検証
 
