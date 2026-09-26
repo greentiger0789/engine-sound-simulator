@@ -451,6 +451,7 @@ test("runs the product audio controls without creating audio before the user sta
   await page.goto("/");
 
   await expect(page.getByTestId("audio-status")).toHaveText("idle");
+  await page.getByText("Configuration details", { exact: true }).click();
   await expect(page.getByRole("button", { name: "Stop audio" })).toBeDisabled();
   await expect(page.getByLabel("Mute audio")).not.toBeChecked();
   await expect(
@@ -587,6 +588,7 @@ test("keyboard shifts through first, neutral, and second and holds the clutch", 
   page,
 }) => {
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
   const gear = page.getByRole("combobox", { name: "Gear", exact: true });
   const clutch = page.getByLabel("Clutch engagement");
   await expect(gear).toHaveValue("0");
@@ -742,6 +744,7 @@ test("stages preset phase edits from the keyboard without creating audio", async
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   const preset = page.getByLabel("Engine preset");
   await preset.focus();
@@ -783,6 +786,7 @@ test("applies a stopped two-stroke 360-degree configuration and starts it", asyn
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await page
     .getByLabel("Engine preset")
@@ -831,6 +835,7 @@ test("stages and starts the six- and eight-cylinder model presets in the native 
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await expect(page.getByTestId("preset-limitations")).toContainText(
     "Available presets: 1–4, 6, and 8 cylinders",
@@ -877,6 +882,7 @@ test("announces multiple invalid phases once and focuses the first invalid field
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await page
     .getByLabel("Engine preset")
@@ -930,6 +936,7 @@ test("promotes a stopped four-cylinder pending configuration only after its next
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await page.getByRole("button", { name: "Start audio" }).click();
   await expect(page.getByTestId("audio-status")).toHaveText("running");
@@ -999,6 +1006,7 @@ test("keeps endpoint and near firing events readable at the supported 320px view
   await page.setViewportSize({ width: 320, height: 1_100 });
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await page
     .getByLabel("Engine preset")
@@ -1076,6 +1084,7 @@ test("renders each active parallel-twin firing order with live waveform and spec
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
   await instrumentLiveAnalyserActivity(page);
 
   const twins = [
@@ -1116,6 +1125,7 @@ test("covers the product start, stop, rejected reapply, and successful retry flo
 }) => {
   await instrumentAudioGraph(page, { rejectProcessorConfigOnAttempt: 2 });
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   // A running status is reached only after the native processor has confirmed
   // its initial configuration and sent ready.
@@ -1171,6 +1181,7 @@ test("deduplicates rapid starts and permits lifecycle restart without graph dupl
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   if (workletServer() === "dev") {
     await expect
@@ -1291,6 +1302,7 @@ test("supports keyboard controls, explicit visibility resume, and processor reco
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   // Configure without a pointer. This also verifies native labels provide the
   // programmatic names keyboard and assistive-technology users depend on.

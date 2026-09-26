@@ -60,6 +60,27 @@ export function EngineVisualizations({
   }, []);
 
   useEffect(() => {
+    const waveform = waveformRef.current;
+    const spectrum = spectrumRef.current;
+    const resize = () => {
+      if (waveform) resizeCanvasForDisplay(waveform, currentPixelRatio());
+      if (spectrum) resizeCanvasForDisplay(spectrum, currentPixelRatio());
+    };
+    resize();
+    const observer =
+      typeof ResizeObserver === "undefined" || !visualizationRef.current
+        ? null
+        : new ResizeObserver(resize);
+    if (observer && visualizationRef.current)
+      observer.observe(visualizationRef.current);
+    window.addEventListener("resize", resize);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+    };
+  }, [reducedMotion]);
+
+  useEffect(() => {
     // Animation is optional presentation and must not alter audio timing.
     if (!running || reducedMotion) return;
     const source = controller.getVisualizationSource();
@@ -80,25 +101,6 @@ export function EngineVisualizations({
       }
     };
 
-    // Set the backing-store dimensions before the first analyser draw.
-    if (waveform && waveformContext)
-      resizeCanvasForDisplay(waveform, currentPixelRatio());
-    if (spectrum && spectrumContext)
-      resizeCanvasForDisplay(spectrum, currentPixelRatio());
-
-    const resize = () => {
-      if (waveform && waveformContext)
-        resizeCanvasForDisplay(waveform, currentPixelRatio());
-      if (spectrum && spectrumContext)
-        resizeCanvasForDisplay(spectrum, currentPixelRatio());
-    };
-    const observer =
-      typeof ResizeObserver === "undefined" || !visualizationRef.current
-        ? null
-        : new ResizeObserver(resize);
-    if (observer && visualizationRef.current)
-      observer.observe(visualizationRef.current);
-
     const cleanup = startVisualizationLoop({
       source,
       scheduler: {
@@ -106,13 +108,9 @@ export function EngineVisualizations({
         cancelAnimationFrame: (handle) => cancelAnimationFrame(handle),
       },
       draw,
-      disconnectResize: () => observer?.disconnect(),
     });
 
-    return () => {
-      cleanup?.();
-      if (!cleanup) observer?.disconnect();
-    };
+    return () => cleanup?.();
   }, [controller, reducedMotion, running]);
 
   return (
