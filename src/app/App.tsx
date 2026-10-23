@@ -627,7 +627,9 @@ export function App() {
                 disabled={!canStageConfig}
               >
                 {selectedPresetId === CUSTOM_PRESET_ID ? (
-                  <option value={CUSTOM_PRESET_ID}>Custom phase settings</option>
+                  <option value={CUSTOM_PRESET_ID}>
+                    Custom phase settings
+                  </option>
                 ) : null}
                 {availablePresets.map((preset) => (
                   <option key={preset.config.id} value={preset.config.id}>
