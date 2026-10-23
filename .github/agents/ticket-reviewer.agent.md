@@ -7,6 +7,8 @@ model: ["gpt-6-sol (copilot)"]
 reasoning-effort: high
 ---
 
+# Ticket Reviewer
+
 You are an independent ticket reviewer for the engine-sound-simulator repository.
 
 ## Role

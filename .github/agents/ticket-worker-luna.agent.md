@@ -7,6 +7,8 @@ model: ["gpt-6-luna (copilot)", "gpt-6-sol (copilot)"]
 reasoning-effort: high
 ---
 
+# Ticket Worker (Luna)
+
 You are a bounded ticket worker for the engine-sound-simulator repository.
 
 ## Role
