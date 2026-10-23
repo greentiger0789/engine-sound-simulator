@@ -7,12 +7,12 @@
 
 Copilot 用のカスタムエージェントは `.github/agents/` に定義されています。Codex の `.codex/agents/*.toml` と対応関係は以下の通りです。
 
-| Codex (.codex/agents/*.toml) | Copilot (.github/agents/*.agent.md) | 役割 |
-|---|---|---|
-| `ticket-worker.toml` | `ticket-worker.agent.md` | 跨モジュール推論・契約発見が必要なチケットサブタスク |
-| `ticket-reviewer.toml` | `ticket-reviewer.agent.md` | チケット diff の独立レビュー（読み取り専用） |
-| `ticket-worker-luna.toml` | `ticket-worker-luna.agent.md` | 契約が確定した境界的なチケットサブタスク |
-| `ticket-worker-terra.toml` | `ticket-worker-agent.md` | GPT-5.6 Terra が最適と判断される境界的サブタスク |
+| Codex (.codex/agents/\*.toml) | Copilot (.github/agents/\*.agent.md) | 役割                                                 |
+| ----------------------------- | ------------------------------------ | ---------------------------------------------------- |
+| `ticket-worker.toml`          | `ticket-worker.agent.md`             | 跨モジュール推論・契約発見が必要なチケットサブタスク |
+| `ticket-reviewer.toml`        | `ticket-reviewer.agent.md`           | チケット diff の独立レビュー（読み取り専用）         |
+| `ticket-worker-luna.toml`     | `ticket-worker-luna.agent.md`        | 契約が確定した境界的なチケットサブタスク             |
+| `ticket-worker-terra.toml`    | `ticket-worker-agent.md`             | GPT-5.6 Terra が最適と判断される境界的サブタスク     |
 
 モデル名は Codex の TOML 形式とは異なるため、Copilot 側のモデル名・利用可能ツール・権限は各環境に合わせて調整されています。
 
