@@ -33,6 +33,7 @@ const availablePresets: readonly EnginePreset[] = [
   vSixPreset,
   vEightPreset,
 ];
+const CUSTOM_PRESET_ID = "__custom__";
 
 function phaseValues(config: EngineConfig): string[] {
   return config.cylinders.map((cylinder) => String(cylinder.firingAngleDeg));
@@ -290,16 +291,21 @@ export function App() {
     syncHoldThrottle,
   ]);
 
-  const selectPreset = useCallback((presetId: string) => {
-    const preset = availablePresets.find(
-      ({ config }) => config.id === presetId,
-    );
-    if (!preset) return;
-    setSelectedPresetId(presetId);
-    setDraftConfig(preset.config);
-    setPhases(phaseValues(preset.config));
-    setValidationIssues([]);
-  }, []);
+  const selectPreset = useCallback(
+    (presetId: string) => {
+      const preset = availablePresets.find(
+        ({ config }) => config.id === presetId,
+      );
+      if (!preset) return;
+      const result = controller.stageConfig(preset.config);
+      if (!result.ok) return;
+      setSelectedPresetId(presetId);
+      setDraftConfig(result.value);
+      setPhases(phaseValues(result.value));
+      setValidationIssues([]);
+    },
+    [controller],
+  );
 
   const updatePhase = useCallback((index: number, value: string) => {
     setPhases((current) =>
@@ -307,6 +313,7 @@ export function App() {
         currentIndex === index ? value : phase,
       ),
     );
+    setSelectedPresetId(CUSTOM_PRESET_ID);
     setValidationIssues([]);
   }, []);
 
@@ -614,10 +621,14 @@ export function App() {
               <span>Engine preset</span>
               <select
                 id="engine-preset"
+                aria-describedby="preset-apply-help"
                 value={selectedPresetId}
                 onChange={(event) => selectPreset(event.target.value)}
                 disabled={!canStageConfig}
               >
+                {selectedPresetId === CUSTOM_PRESET_ID ? (
+                  <option value={CUSTOM_PRESET_ID}>Custom phase settings</option>
+                ) : null}
                 {availablePresets.map((preset) => (
                   <option key={preset.config.id} value={preset.config.id}>
                     {preset.metadata.name}
@@ -625,6 +636,10 @@ export function App() {
                 ))}
               </select>
             </label>
+            <p className="cycle-description" id="preset-apply-help">
+              Selecting a preset queues it for the next start. Edit phases in
+              Configuration details.
+            </p>
 
             {validationIssues.length > 0 || drivetrainIssues.length > 0 ? (
               <p className="validation-summary" role="alert">

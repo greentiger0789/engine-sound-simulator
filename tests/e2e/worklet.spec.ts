@@ -781,6 +781,63 @@ test("stages preset phase edits from the keyboard without creating audio", async
     .toBe(0);
 });
 
+test("queues a selected preset from the closed dashboard without starting audio", async ({
+  page,
+}) => {
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+
+  await expect(page.locator(".configuration-details")).not.toHaveAttribute(
+    "open",
+  );
+  await page.getByLabel("Engine preset").focus();
+  await page.keyboard.press("End");
+  await expect(page.getByLabel("Engine preset")).toHaveValue(
+    "even-fire-v8-model",
+  );
+  await expect(page.getByTestId("pending-config")).toHaveText(
+    "even-fire-v8-model",
+  );
+  await expect(page.getByTestId("active-config")).toHaveText(
+    "single-cylinder-model",
+  );
+  await expect(page.getByTestId("firing-event")).toHaveCount(1);
+  await expect
+    .poll(() => audioGraphCount(page, "__e2eAudioContextCount"))
+    .toBe(0);
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await expect(page.getByTestId("active-config")).toHaveText(
+    "even-fire-v8-model",
+  );
+  await expect(page.getByTestId("pending-config")).toHaveText(
+    "No pending configuration",
+  );
+  await expect(page.getByLabel("Engine preset")).toBeDisabled();
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});
+
+test("can reselect a preset after editing custom phases", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Engine preset").selectOption("even-fire-v8-model");
+  await page.getByText("Configuration details", { exact: true }).click();
+  const firstPhase = page.getByLabel("Cylinder 1 phase (degrees)");
+  await firstPhase.fill("1");
+  await expect(page.getByLabel("Engine preset")).toHaveValue("__custom__");
+  await page.getByRole("button", { name: "Apply for next start" }).click();
+  await expect(firstPhase).toHaveValue("1");
+  await page.getByText("Configuration details", { exact: true }).click();
+
+  await page.getByLabel("Engine preset").selectOption("even-fire-v8-model");
+  await expect(page.getByTestId("pending-config")).toHaveText(
+    "even-fire-v8-model",
+  );
+  await page.getByText("Configuration details", { exact: true }).click();
+  await expect(firstPhase).toHaveValue("0");
+});
+
 test("applies a stopped two-stroke 360-degree configuration and starts it", async ({
   page,
 }) => {
