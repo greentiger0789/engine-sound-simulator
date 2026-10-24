@@ -451,6 +451,7 @@ test("runs the product audio controls without creating audio before the user sta
   await page.goto("/");
 
   await expect(page.getByTestId("audio-status")).toHaveText("idle");
+  await page.getByText("Configuration details", { exact: true }).click();
   await expect(page.getByRole("button", { name: "Stop audio" })).toBeDisabled();
   await expect(page.getByLabel("Mute audio")).not.toBeChecked();
   await expect(
@@ -587,6 +588,7 @@ test("keyboard shifts through first, neutral, and second and holds the clutch", 
   page,
 }) => {
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
   const gear = page.getByRole("combobox", { name: "Gear", exact: true });
   const clutch = page.getByLabel("Clutch engagement");
   await expect(gear).toHaveValue("0");
@@ -742,6 +744,7 @@ test("stages preset phase edits from the keyboard without creating audio", async
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   const preset = page.getByLabel("Engine preset");
   await preset.focus();
@@ -778,11 +781,69 @@ test("stages preset phase edits from the keyboard without creating audio", async
     .toBe(0);
 });
 
+test("queues a selected preset from the closed dashboard without starting audio", async ({
+  page,
+}) => {
+  await instrumentAudioGraph(page);
+  await page.goto("/");
+
+  await expect(page.locator(".configuration-details")).not.toHaveAttribute(
+    "open",
+  );
+  await page.getByLabel("Engine preset").focus();
+  await page.keyboard.press("End");
+  await expect(page.getByLabel("Engine preset")).toHaveValue(
+    "even-fire-v8-model",
+  );
+  await expect(page.getByTestId("pending-config")).toHaveText(
+    "even-fire-v8-model",
+  );
+  await expect(page.getByTestId("active-config")).toHaveText(
+    "single-cylinder-model",
+  );
+  await expect(page.getByTestId("firing-event")).toHaveCount(1);
+  await expect
+    .poll(() => audioGraphCount(page, "__e2eAudioContextCount"))
+    .toBe(0);
+
+  await page.getByRole("button", { name: "Start audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("running");
+  await expect(page.getByTestId("active-config")).toHaveText(
+    "even-fire-v8-model",
+  );
+  await expect(page.getByTestId("pending-config")).toHaveText(
+    "No pending configuration",
+  );
+  await expect(page.getByLabel("Engine preset")).toBeDisabled();
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByTestId("audio-status")).toHaveText("idle");
+});
+
+test("can reselect a preset after editing custom phases", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Engine preset").selectOption("even-fire-v8-model");
+  await page.getByText("Configuration details", { exact: true }).click();
+  const firstPhase = page.getByLabel("Cylinder 1 phase (degrees)");
+  await firstPhase.fill("1");
+  await expect(page.getByLabel("Engine preset")).toHaveValue("__custom__");
+  await page.getByRole("button", { name: "Apply for next start" }).click();
+  await expect(firstPhase).toHaveValue("1");
+  await page.getByText("Configuration details", { exact: true }).click();
+
+  await page.getByLabel("Engine preset").selectOption("even-fire-v8-model");
+  await expect(page.getByTestId("pending-config")).toHaveText(
+    "even-fire-v8-model",
+  );
+  await page.getByText("Configuration details", { exact: true }).click();
+  await expect(firstPhase).toHaveValue("0");
+});
+
 test("applies a stopped two-stroke 360-degree configuration and starts it", async ({
   page,
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await page
     .getByLabel("Engine preset")
@@ -831,6 +892,7 @@ test("stages and starts the six- and eight-cylinder model presets in the native 
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await expect(page.getByTestId("preset-limitations")).toContainText(
     "Available presets: 1–4, 6, and 8 cylinders",
@@ -877,6 +939,7 @@ test("announces multiple invalid phases once and focuses the first invalid field
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await page
     .getByLabel("Engine preset")
@@ -930,6 +993,7 @@ test("promotes a stopped four-cylinder pending configuration only after its next
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await page.getByRole("button", { name: "Start audio" }).click();
   await expect(page.getByTestId("audio-status")).toHaveText("running");
@@ -999,6 +1063,7 @@ test("keeps endpoint and near firing events readable at the supported 320px view
   await page.setViewportSize({ width: 320, height: 1_100 });
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   await page
     .getByLabel("Engine preset")
@@ -1076,6 +1141,7 @@ test("renders each active parallel-twin firing order with live waveform and spec
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
   await instrumentLiveAnalyserActivity(page);
 
   const twins = [
@@ -1116,6 +1182,7 @@ test("covers the product start, stop, rejected reapply, and successful retry flo
 }) => {
   await instrumentAudioGraph(page, { rejectProcessorConfigOnAttempt: 2 });
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   // A running status is reached only after the native processor has confirmed
   // its initial configuration and sent ready.
@@ -1171,6 +1238,7 @@ test("deduplicates rapid starts and permits lifecycle restart without graph dupl
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   if (workletServer() === "dev") {
     await expect
@@ -1291,6 +1359,7 @@ test("supports keyboard controls, explicit visibility resume, and processor reco
 }) => {
   await instrumentAudioGraph(page);
   await page.goto("/");
+  await page.getByText("Configuration details", { exact: true }).click();
 
   // Configure without a pointer. This also verifies native labels provide the
   // programmatic names keyboard and assistive-technology users depend on.
