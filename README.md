@@ -12,7 +12,7 @@
 
 - UI: React + TypeScript + Vite
 - 音声: Web Audio API / AudioWorklet によるリアルタイム合成
-- 開発: Docker Compose + Node.js 24 LTS
+- 開発: Docker Compose + Node.js 26 LTS
 - 検証: 数値テストとブラウザ検証を実装に合わせて追加
 
 ## 現在の開発環境

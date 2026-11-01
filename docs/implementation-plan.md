@@ -38,11 +38,11 @@
 | 単体テスト            | Vitest 5                                | 数値計算と DSP を DOM なしで検証                                               |
 | ブラウザ検証          | Playwright                              | 開始操作、Worklet 読み込み、構成変更、エラー処理を検証                         |
 | コード品質            | TypeScript strict + ESLint + Prettier   | React Hooks 規則を含む検証を M1 で追加。ドキュメントは Markdownlint            |
-| 実行基盤              | Node.js 24 LTS + npm + Docker Compose   | Node 26 Current より LTS を優先。npm ci と lockfile で再現性を確保             |
+| 実行基盤              | Node.js 26 LTS + npm + Docker Compose   | Node 26 LTS を採用し、npm ci と lockfile で再現性を確保                        |
 | 本番配信              | ビルド済み静的ファイル + Nginx コンテナ | M1 で multi-stage Dockerfile を追加。音声処理は利用者のブラウザで実行          |
 | CI                    | GitHub Actions + Docker                 | ローカルと同じ Makefile で検証。PR から main へ取り込む                        |
 
-2026-09-12 に npm registry で React 19.3.0、TypeScript 7.0.2、Vite 8.3.0、Vitest 5.0.0、Playwright 1.63.0 を確認した。これらは本体実装時の候補バージョンであり、まだインストールしていない。M1 でプラグイン・型定義・ブラウザイメージの互換性を確認し、実際の採用バージョンを lockfile へ固定する。現在の基盤は Node 24.21.0、Prettier 3.9.6、Markdownlint CLI2 0.23.2 を使用する。
+2026-11-01 に npm registry で Node 26.12.0 LTS、TypeScript 7.0.2、Vite 8.3.0、Vitest 5.0.0、Playwright 1.64.1 を確認した。TypeScript 7 は現行の `typescript-eslint` が正式サポート範囲外のため、そのまま上げず、Node 26 と型定義・Docker の整合を優先して lockfile を固定する。現在の基盤は Node 26.12.0、Prettier 3.9.10、Markdownlint CLI2 0.24.0 を使用する。
 
 React 公式の [Vite を用いた構成例](https://react.dev/learn/build-a-react-app-from-scratch)、[Vite の実行要件](https://vite.dev/guide/)、[Node.js リリース情報](https://nodejs.org/en/about/previous-releases)を踏まえた選定。Next.js はサーバー側機能が必要になった時点で再検討する。Tone.js の音楽シーケンサー抽象化は燃焼計算の中心には使わない。Rust / C++ / WASM は性能測定で必要性が確認された場合に限定する。
 
