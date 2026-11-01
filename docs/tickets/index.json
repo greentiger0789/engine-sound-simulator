@@ -246,5 +246,13 @@
     "milestone": "M6",
     "depends_on": [24],
     "file": "docs/tickets/031-high-rpm-envelope.md"
+  },
+  {
+    "id": 32,
+    "slug": "sixth-gear-addition",
+    "title": "ギア6（6速）の追加とトランスミッション整合",
+    "milestone": "M6",
+    "depends_on": [24],
+    "file": "docs/tickets/032-sixth-gear-addition.md"
   }
 ]

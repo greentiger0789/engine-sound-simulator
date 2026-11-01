@@ -29,7 +29,7 @@ export type DrivetrainConfigResult =
   | { readonly ok: false; readonly issues: readonly DrivetrainConfigIssue[] };
 
 export const DEFAULT_DRIVETRAIN_CONFIG: DrivetrainConfig = Object.freeze({
-  gearRatios: Object.freeze([0, 11.5, 7.5, 5.4, 4.2, 3.4]),
+  gearRatios: Object.freeze([0, 11.5, 7.5, 5.4, 4.2, 3.4, 2.8]),
   vehicleMassKg: 320,
   wheelRadiusM: 0.31,
   rollingResistanceN: 45,
