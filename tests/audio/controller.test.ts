@@ -810,4 +810,18 @@ describe("AudioController", () => {
       pendingConfig: null,
     });
   });
+
+  it("supports selecting gear 6 and ignores out-of-range gears", () => {
+    const controller = new AudioController();
+    expect(controller.getSnapshot().drivetrainConfig.gearRatios).toHaveLength(
+      7,
+    );
+    controller.setDrivetrainGear(6);
+    expect(controller.getSnapshot().drivetrainGear).toBe(6);
+    // Gear 7 is out of range for 6 forward gears (index 0..6)
+    controller.setDrivetrainGear(7);
+    expect(controller.getSnapshot().drivetrainGear).toBe(6);
+    controller.setDrivetrainGear(-1);
+    expect(controller.getSnapshot().drivetrainGear).toBe(6);
+  });
 });
