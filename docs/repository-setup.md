@@ -6,6 +6,34 @@
 
 [参考リポジトリ](https://github.com/greentiger0789/ollama-discord-chat-app-docker)の Docker Compose / Makefile、workflow・Dockerfile の lint、秘密情報検査、Dependabot、PR テンプレートを参考にしています。本プロジェクトでは個人開発で取り込めるよう他者承認は必須にせず、CI を必須にします。
 
+## セキュリティ自動化
+
+- `dependabot.yml` は npm、GitHub Actions、Dockerfile、Docker Compose の更新を週次で確認します。GitHub の **Dependabot alerts** と **Dependabot security updates** も有効にし、脆弱性アラートと修正 PR を受け取ります。
+- `codeql.yml` は JavaScript / TypeScript を push、PR、週次で解析し、結果を Security タブへ登録します。
+- `trivy.yml` は本番 Web イメージとリポジトリの依存・設定を HIGH / CRITICAL でスキャンし、SARIF を Security タブへ登録します。脆弱性検出は報告のみで必須 CI を失敗させません。スキャンや結果登録自体の失敗は成功扱いにしません。フォークからの PR は権限上 SARIF 登録を行わず、スキャンだけ実施します。
+- `SECURITY.md` に脆弱性の非公開報告方法を記載します。GitHub の **Private vulnerability reporting** を有効にしてください。
+- Secret Scanning と Push Protection も有効のまま維持します。ワークフローの権限は必要な job に限定し、`pull_request_target` は使用しません。
+
+新しい公開リポジトリでは、管理者として次の設定を有効にします（既存リポジトリでも再実行できます）。
+
+```bash
+gh api --method PUT repos/greentiger0789/engine-sound-simulator/vulnerability-alerts
+gh api --method PUT repos/greentiger0789/engine-sound-simulator/automated-security-fixes
+gh api --method PUT repos/greentiger0789/engine-sound-simulator/private-vulnerability-reporting
+```
+
+GitHub の設定状態を確認するには:
+
+```bash
+gh api repos/greentiger0789/engine-sound-simulator \
+  --jq '.security_and_analysis'
+gh api repos/greentiger0789/engine-sound-simulator/actions/permissions/workflow
+gh api repos/greentiger0789/engine-sound-simulator/automated-security-fixes
+gh api repos/greentiger0789/engine-sound-simulator/private-vulnerability-reporting
+```
+
+CodeQL / Trivy の結果は GitHub の Security タブで確認します。Dependabot の脆弱性アラート API は管理者権限で確認してください。
+
 ルールの原本は [main.json](../.github/rulesets/main.json) です。GitHub 上で変更した場合は、このファイルも更新します。
 
 ## 初期作成・再設定

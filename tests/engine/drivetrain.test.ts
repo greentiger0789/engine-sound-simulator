@@ -122,6 +122,7 @@ describe("Drivetrain", () => {
     const vehicle = configuredVehicle();
     expect(() => vehicle.setGear(-1)).toThrow(RangeError);
     expect(() => vehicle.setGear(1.5)).toThrow(RangeError);
+    expect(() => vehicle.setGear(7)).toThrow(RangeError);
     expect(() => vehicle.setClutch(1.1)).toThrow(RangeError);
     expect(() => vehicle.setClutch(NaN)).toThrow(RangeError);
     expect(() => vehicle.advanceFixedStep(Infinity)).toThrow(RangeError);
@@ -132,5 +133,46 @@ describe("Drivetrain", () => {
       vehicleSpeedMps: 0,
       engineLoadTorqueNm: 0,
     });
+  });
+
+  it("supports gear 6 with overdrive cruising characteristics and finite states", () => {
+    expect(DEFAULT_DRIVETRAIN_CONFIG.gearRatios).toHaveLength(7);
+    expect(DEFAULT_DRIVETRAIN_CONFIG.gearRatios[0]).toBe(0);
+    expect(DEFAULT_DRIVETRAIN_CONFIG.gearRatios[5]).toBe(3.4);
+    expect(DEFAULT_DRIVETRAIN_CONFIG.gearRatios[6]).toBe(2.8);
+
+    const vehicle = new Drivetrain();
+    vehicle.setGear(6);
+    vehicle.setClutch(1);
+    expect(vehicle.getState().gear).toBe(6);
+
+    for (let step = 0; step < 1_000; step += 1) {
+      vehicle.advanceFixedStep(rpmToRadPerSecond(3_000));
+    }
+
+    expect(vehicle.getVehicleSpeedMps()).toBeGreaterThan(0);
+    expect(Number.isFinite(vehicle.getVehicleSpeedMps())).toBe(true);
+    expect(Number.isFinite(vehicle.getEngineLoadTorqueNm())).toBe(true);
+    expect(vehicle.getEngineLoadTorqueNm()).toBeGreaterThanOrEqual(0);
+
+    // Under unresisted acceleration to synchronization, gear 6 reaches higher top speed than gear 5
+    const freeConfig = {
+      ...DEFAULT_DRIVETRAIN_CONFIG,
+      rollingResistanceN: 0,
+      aerodynamicDragNPerMpsSquared: 0,
+    };
+    const v5 = new Drivetrain(freeConfig);
+    v5.setGear(5);
+    v5.setClutch(1);
+    const v6 = new Drivetrain(freeConfig);
+    v6.setGear(6);
+    v6.setClutch(1);
+    for (let step = 0; step < 30_000; step += 1) {
+      v5.advanceFixedStep(rpmToRadPerSecond(2_000));
+      v6.advanceFixedStep(rpmToRadPerSecond(2_000));
+    }
+    expect(v6.getVehicleSpeedMps()).toBeGreaterThan(v5.getVehicleSpeedMps());
+
+    expect(() => vehicle.setGear(7)).toThrow(RangeError);
   });
 });

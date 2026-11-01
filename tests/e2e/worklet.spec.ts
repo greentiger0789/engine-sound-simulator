@@ -470,9 +470,11 @@ test("runs the product audio controls without creating audio before the user sta
 
   const vehicleMass = page.getByLabel("Vehicle mass (kg)");
   const firstGearRatio = page.getByLabel("Gear 1 ratio");
+  const sixthGearRatio = page.getByLabel("Gear 6 ratio");
   const applyDrivetrain = page.getByRole("button", {
     name: "Apply drivetrain settings",
   });
+  await expect(sixthGearRatio).toHaveValue("2.8");
   await vehicleMass.fill("-1");
   await applyDrivetrain.click();
   await expect(page.getByRole("alert")).toContainText(/mass/i);
@@ -600,6 +602,7 @@ test("keyboard shifts through first, neutral, and second and holds the clutch", 
     "3rd gear",
     "4th gear",
     "5th gear",
+    "6th gear",
   ]);
 
   await page.keyboard.press("ArrowDown");
@@ -607,6 +610,24 @@ test("keyboard shifts through first, neutral, and second and holds the clutch", 
   await page.keyboard.press("ArrowUp");
   await expect(gear).toHaveValue("0");
   await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("2");
+  await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("3");
+  await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("4");
+  await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("5");
+  await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("6");
+  await page.keyboard.press("ArrowUp");
+  await expect(gear).toHaveValue("6");
+  await page.keyboard.press("ArrowDown");
+  await expect(gear).toHaveValue("5");
+  await page.keyboard.press("ArrowDown");
+  await expect(gear).toHaveValue("4");
+  await page.keyboard.press("ArrowDown");
+  await expect(gear).toHaveValue("3");
+  await page.keyboard.press("ArrowDown");
   await expect(gear).toHaveValue("2");
   await page.keyboard.press("ArrowDown");
   await expect(gear).toHaveValue("0");
