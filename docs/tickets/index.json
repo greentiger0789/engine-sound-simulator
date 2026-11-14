@@ -254,5 +254,13 @@
     "milestone": "M6",
     "depends_on": [24],
     "file": "docs/tickets/032-sixth-gear-addition.md"
+  },
+  {
+    "id": 33,
+    "slug": "node26-latest-update",
+    "title": "Node.js 26 最新版へのランタイム更新",
+    "milestone": "M1",
+    "depends_on": [26],
+    "file": "docs/tickets/033-node26-latest-update.md"
   }
 ]
