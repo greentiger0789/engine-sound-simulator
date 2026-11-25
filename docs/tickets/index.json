@@ -262,5 +262,13 @@
     "milestone": "M1",
     "depends_on": [26],
     "file": "docs/tickets/033-node26-latest-update.md"
+  },
+  {
+    "id": 34,
+    "slug": "typescript-7-dual-toolchain",
+    "title": "TypeScript 7 / 6 の公式併用移行",
+    "milestone": "M1",
+    "depends_on": [33],
+    "file": "docs/tickets/034-typescript-7-dual-toolchain.md"
   }
 ]
