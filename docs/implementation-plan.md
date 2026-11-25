@@ -42,7 +42,7 @@
 | 本番配信              | ビルド済み静的ファイル + Nginx コンテナ | M1 で multi-stage Dockerfile を追加。音声処理は利用者のブラウザで実行          |
 | CI                    | GitHub Actions + Docker                 | ローカルと同じ Makefile で検証。PR から main へ取り込む                        |
 
-2026-11-26 時点の Node.js 基盤は Node 26.13.1。現在の依存関係では `typescript-eslint` の peer range が `>=4.8.4 <6.1.0` のため、TypeScript 7 を `typescript` として単独導入すると `npm ci` が失敗する。Microsoft の TypeScript 7 移行案内に従い、将来の移行では npm alias により TypeScript 7 のネイティブ `tsc` と、API 互換用 TypeScript 6 を併置する。`tsc --build` の型検査はTypeScript 7、Compiler API を参照する既存lint経路は `typescript` 名で解決されるTypeScript 6を使い、peer dependency を無視する install flag は使わない。現行lockfileはチケット34の完了までTypeScript 6.0.3を維持する。Node 26、Playwright 1.65.1、Prettier 3.10.1、Markdownlint CLI2を含むその他の基盤バージョンは各依存更新チケットの契約に従う。
+2026-11-26 時点の Node.js 基盤は Node 26.13.1。`typescript-eslint`（8.73.0）の `typescript` peer range が `>=4.8.4 <6.1.0` のため、Microsoft の TypeScript 7 移行案内に従い、npm alias により `@typescript/native`（`npm:typescript@7.0.2`）のネイティブ `tsc` と、`typescript`（`npm:@typescript/typescript6@6.0.2`、TypeScript `6.0.3` API と `tsc6` を提供）を単一 lockfile に併置している。`tsc --build` の型検査は TypeScript 7、Compiler API を参照する既存 lint 経路は `typescript` 名で解決される TypeScript 6 を使い、peer dependency を無視する install flag（`--force` / `--legacy-peer-deps`）は使わない。Node 26、Playwright 1.65.1、Prettier 3.10.1、Markdownlint CLI2 を含むその他の基盤バージョンは各依存更新チケットの契約に従う。
 
 React 公式の [Vite を用いた構成例](https://react.dev/learn/build-a-react-app-from-scratch)、[Vite の実行要件](https://vite.dev/guide/)、[Node.js リリース情報](https://nodejs.org/en/about/previous-releases)を踏まえた選定。Next.js はサーバー側機能が必要になった時点で再検討する。Tone.js の音楽シーケンサー抽象化は燃焼計算の中心には使わない。Rust / C++ / WASM は性能測定で必要性が確認された場合に限定する。
 
@@ -296,6 +296,6 @@ M1〜M3 を最初の利用可能版とする。各段階は数個の小さな PR
 
 ## 15. TypeScript 7 / 6 の併用移行
 
-TypeScript 7.0 はネイティブコンパイラとして型検査に使い、TypeScript Compiler API を必要とするツールには TypeScript 6 API を提供する。チケット34で、Microsoft が案内する npm alias（`@typescript/native` にTypeScript 7、`typescript` に `@typescript/typescript6`）を用いて単一の lockfile 内に固定する。`npx tsc --build` はTypeScript 7を実行し、`tsc6` は移行中の比較検証に使う。既存の strict 設定、project references、`tsc --build` の検査範囲は維持する。
+TypeScript 7.0 はネイティブコンパイラとして型検査に使い、TypeScript Compiler API を必要とするツールには TypeScript 6 API を提供する。チケット34で、Microsoft が案内する npm alias（`@typescript/native` に `npm:typescript@7.0.2`、`typescript` に `npm:@typescript/typescript6@6.0.2`）を用いて単一の lockfile 内に固定した。`npm run typecheck` / `npm run build`（`tsc --build`）は TypeScript 7 を実行し、`npx tsc6 --build` は API 互換および移行後の診断比較検証に使う。既存の strict 設定、project references、`tsc --build` の検査範囲は維持する。
 
-`typescript-eslint` の現行peer rangeを満たすため、ESLintの既存ルールと parser API は TypeScript 6 側に保つ。インストール時に `--force` / `--legacy-peer-deps` を使わず、TypeScript 6と7それぞれのバージョン・実行経路をDocker内で確認する。TypeScript 7.1 Beta の実験的 `projectService` / `tsgo` lint backend、型情報lintへの移行、Oxlintへの移行は本チケットに含めない。後者は stable なルール同等性が確認できてから別途判断する。
+`typescript-eslint` の現行 peer range を満たすため、ESLint の既存ルールと parser API は TypeScript 6 側に保つ。インストール時に `--force` / `--legacy-peer-deps` を使わず、Docker 内で `npx tsc --version`、`npx tsc6 --version`、`npm explain typescript`、`npx tsc --build --force`、`npx tsc6 --build --force`、および `make ci` で両コンパイラと lint 互換性を継続検証する。TypeScript 7.1 Beta の実験的 `projectService` / `tsgo` lint backend、型情報 lint への移行、Oxlint への移行は本チケットに含めない。後者は stable なルール同等性が確認できてから別途判断する。
