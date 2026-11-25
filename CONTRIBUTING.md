@@ -55,3 +55,9 @@ GitHub Actions では、Docker layer を再利用するアプリ検証、ブラ�
 チケットカタログの依存関係・パス検証と、その検証スクリプトのテストも `make ci` に含みます。共有スキルと Codex 設定は許可したパスだけを Git に含め、ローカルの認証やセッション状態はコミットしません。
 
 依存関係は lockfile をコミットし、CI では `npm ci` を使用します。依存更新は Docker ビルドと CI を通して確認してください。Dependabot は npm・Dockerfile・GitHub Actions を週次で確認します。Makefile 内の検証用イメージタグは手動更新対象です。
+
+### TypeScript 7 / 6 の併用構成
+
+- **用途の分離:** 型検査（`npm run typecheck` と `npm run build`）には `@typescript/native`（`npm:typescript@7.0.2`）の `tsc --build` を使い、`typescript-eslint` など従来の TypeScript Compiler API を参照する lint には `typescript`（`npm:@typescript/typescript6@6.0.2`、TypeScript `6.0.3` API および `tsc6` バイナリを提供）を併用します。TypeScript 7.1 Beta / nightly や実験的 `tsgo` lint backend は採用していません。
+- **バージョンと依存解決の確認:** `make shell` 等でコンテナ内に入り、`npx tsc --version`（TypeScript 7）、`npx tsc6 --version`（TypeScript 6）、`npm explain typescript`（`typescript-eslint` 配下の `typescript` peer が TypeScript 6 へ解決されること）を確認します。
+- **依存更新時の更新・検証手順:** `@typescript/native` と `typescript`（`@typescript/typescript6`）の片方または関連ツール（`typescript-eslint` 等）を更新する際は、`--force` や `--legacy-peer-deps` を使わずに lockfile を更新し、Docker 内で `npm ci --no-audit --no-fund`、`npx tsc --version`、`npx tsc6 --version`、`npx tsc --build --force`、`npx tsc6 --build --force`、`npm run check`、および `make ci` を実行して両コンパイラの診断整合と lint 互換性を確認してください。なお、現行の `@typescript-eslint/typescript-estree` は実験的 `tsgo` バックエンド向けの `peerOptional` として `@typescript/native` に `7.1.0-beta` 系を要求するため、`npm install` や `npm ls` で当該 `peerOptional` の範囲不一致が表示される場合がありますが、`npm ci` はエラー・警告なしで再現でき、ESLint の必須 `typescript` peer は TypeScript 6 で満たされます。

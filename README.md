@@ -10,7 +10,7 @@
 
 [実装計画書](docs/implementation-plan.md)に、技術選定、回転・燃焼モデル、音声合成、Docker / WSL 構成、段階ごとの完了条件をまとめています。
 
-- UI: React + TypeScript + Vite
+- UI: React + TypeScript（型検査: TypeScript 7 / lint API 互換: TypeScript 6） + Vite
 - 音声: Web Audio API / AudioWorklet によるリアルタイム合成
 - 開発: Docker Compose + Node.js 26 LTS
 - 検証: 数値テストとブラウザ検証を実装に合わせて追加
@@ -31,6 +31,8 @@ make shell   # 開発ツールのコンテナに入る
 開発ツールのコンテナは非 root で実行し、依存関係はコンテナ側の
 volume に保持します。E2E は Playwright 公式コンテナ内の Chromium で
 実行します。製品利用時に音を計算・出力するのは Windows 側のブラウザです。
+
+型検査（`npm run typecheck`・`npm run build`）には `@typescript/native`（TypeScript 7.0.2 の `tsc`）を使い、`typescript-eslint` など従来の Compiler API を要する lint には `typescript` alias（`@typescript/typescript6` 6.0.2 / TypeScript 6.0.3 API）を併用しています。`make shell` 内のコンテナで `npx tsc --version` と `npx tsc6 --version` により両コンパイラを確認でき、依存更新時の確認手順は [CONTRIBUTING.md](CONTRIBUTING.md) にまとめています。
 
 ## 起動と使い方
 
